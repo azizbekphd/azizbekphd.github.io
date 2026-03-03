@@ -86,12 +86,13 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
          intensity={1.5} 
          castShadow 
          shadow-mapSize={[2048, 2048]}
-         shadow-camera-left={-30}
-         shadow-camera-right={30}
-         shadow-camera-top={30}
-         shadow-camera-bottom={-30}
+         shadow-camera-left={-12}
+         shadow-camera-right={12}
+         shadow-camera-top={12}
+         shadow-camera-bottom={-12}
          shadow-camera-near={0.1}
          shadow-camera-far={100}
+         shadow-bias={-0.0005}
        />
        <pointLight position={[-15, 15, -15]} intensity={1.0} />
 
@@ -104,7 +105,7 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
          </Suspense>
        </Physics>
 
-       <EffectComposer disableNormalPass>
+       <EffectComposer disableNormalPass multisampling={8}>
          <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={1.5} />
          <Noise opacity={0.02} />
          <Vignette eskil={false} offset={0.1} darkness={1.1} />
@@ -169,7 +170,13 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
             </div>
           )}
 
-          <Canvas key={gameKey} shadows="pcf" camera={{ position: [0, 25, 0], fov: 40 }} dpr={[1, 2]}>
+          <Canvas 
+            key={gameKey} 
+            shadows 
+            gl={{ antialias: true, shadowMapType: THREE.PCFSoftShadowMap }}
+            camera={{ position: [0, 25, 0], fov: 40 }} 
+            dpr={[1, 2]}
+          >
               <color attach="background" args={['#1a1a1a']} />
               <SceneContent map={map} onNavigate={onNavigate} isReady={isReady} onFail={handleFail} />
           </Canvas>
