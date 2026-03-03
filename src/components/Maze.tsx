@@ -88,11 +88,11 @@ export function Maze({ map, onNavigate }: MazeProps) {
     const holes: any[] = [];
     map.forEach((row, z) => {
       row.forEach((cell, x) => {
-        if (cell >= 2 && cell <= 8) {
-          const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
-          const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
+        const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
+        const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
+
+        if (cell >= 2 && cell <= 5) {
           let route = "/"; let label = "";
-          
           if (cell === 2) { route = "/projects"; label = "PROJECTS"; }
           if (cell === 3) { route = "/skills"; label = "SKILLS"; }
           if (cell === 4) { route = "/contact"; label = "CONTACT"; }

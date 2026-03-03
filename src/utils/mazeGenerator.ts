@@ -11,7 +11,6 @@ class SquirrelRandom {
 }
 
 export function generateMaze(seedStr: string, size = 15): number[][] {
-  // Convert string seed to number
   let seedNum = 0;
   for (let i = 0; i < seedStr.length; i++) {
     seedNum = (seedNum << 5) - seedNum + seedStr.charCodeAt(i);
@@ -19,10 +18,7 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
   }
   const rng = new SquirrelRandom(Math.abs(seedNum) || 1);
 
-  // Initialize maze with walls (1)
   const maze: number[][] = Array(size).fill(0).map(() => Array(size).fill(1));
-
-  // Recursive backtracking to carve paths
   const stack: [number, number][] = [];
   const startX = 1;
   const startZ = 1;
@@ -32,7 +28,6 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
   while (stack.length > 0) {
     const [currX, currZ] = stack[stack.length - 1];
     const neighbors: [number, number, number, number][] = [];
-
     [[0, -2], [0, 2], [-2, 0], [2, 0]].forEach(([dx, dz]) => {
       const nx = currX + dx;
       const nz = currZ + dz;
@@ -40,7 +35,6 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
         neighbors.push([nx, nz, dx, dz]);
       }
     });
-
     if (neighbors.length > 0) {
       const idx = Math.floor(rng.next() * neighbors.length);
       const [nx, nz, dx, dz] = neighbors[idx];
@@ -52,10 +46,8 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
     }
   }
 
-  // Place Start (9)
   maze[1][1] = 9;
 
-  // Find "Next Level" hole (5)
   let nextPos: [number, number] | null = null;
   for (let z = size - 2; z > size / 2 && !nextPos; z--) {
     for (let x = size - 2; x > size / 2 && !nextPos; x--) {
@@ -66,32 +58,31 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
     }
   }
 
-  // Find the unique path from Start to Next to ensure Home doesn't block it
-  const pathSet = new Set<string>();
+  const pathList: [number, number][] = [];
   if (nextPos) {
-      const findPath = (cx: number, cz: number, targetX: number, targetZ: number, visited: Set<string>): string[] | null => {
+      const findPath = (cx: number, cz: number, targetX: number, targetZ: number, visited: Set<string>): [number, number][] | null => {
           const key = `${cx},${cz}`;
-          if (cx === targetX && cz === targetZ) return [key];
+          if (cx === targetX && cz === targetZ) return [[cx, cz]];
           visited.add(key);
-          
           const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
           for (const [dx, dz] of directions) {
               const nx = cx + dx;
               const nz = cz + dz;
               if (nx >= 0 && nx < size && nz >= 0 && nz < size && maze[nz][nx] !== 1 && !visited.has(`${nx},${nz}`)) {
                   const res = findPath(nx, nz, targetX, targetZ, visited);
-                  if (res) return [key, ...res];
+                  if (res) return [[cx, cz], ...res];
               }
           }
           return null;
       };
       const path = findPath(1, 1, nextPos[0], nextPos[1], new Set());
-      if (path) path.forEach(p => pathSet.add(p));
+      if (path) path.forEach(p => pathList.push(p));
   }
 
-  // Place "Back Home" hole (2) - Ensure it's NOT on the path to NEXT
+  const pathSet = new Set(pathList.map(p => `${p[0]},${p[1]}`));
+
+  // Place "Back Home" hole (2) - Ensure it's NOT on the path
   let placedHome = false;
-  // Try to find a dead-end or branch that isn't the main route
   for (let z = 1; z < size - 1 && !placedHome; z++) {
     for (let x = size - 2; x > 1 && !placedHome; x--) {
       if (maze[z][x] === 0 && maze[z][x] !== 9 && maze[z][x] !== 5 && !pathSet.has(`${x},${z}`)) {
