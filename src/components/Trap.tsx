@@ -5,7 +5,7 @@ import * as THREE from 'three';
 
 interface TrapProps {
   position: [number, number, number];
-  onFail: () => void;
+  onFail: (entryPosition: [number, number, number]) => void;
 }
 
 const NEON_BLUE = new THREE.Color("#00ccff");
@@ -167,7 +167,11 @@ export function Trap({ position, onFail }: TrapProps) {
       {/* Physics: Failure sensor - only triggers if trap is open */}
       <RigidBody type="fixed" sensor colliders={false} onIntersectionEnter={({ other }) => {
         if (other.rigidBodyObject?.name === "ball" && isPhysicsOpen) {
-          onFail();
+          const rb = other.rigidBody;
+          if (rb) {
+            const pos = rb.translation();
+            onFail([pos.x, pos.y, pos.z]);
+          }
         }
       }}>
         <CylinderCollider args={[0.3, 0.4]} position={[0, -1.0, 0]} />

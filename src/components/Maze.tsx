@@ -9,7 +9,7 @@ interface MazeProps {
   map: number[][];
   mazeId: string;
   onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
-  onFail?: () => void;
+  onFail?: (entryPosition: [number, number, number]) => void;
 }
 
 const CELL_SIZE = 1;
@@ -22,7 +22,7 @@ const PORTAL_COLORS: Record<string, string> = {
     ENDLESS: "#00ff88",
     NEXT: "#00ff88",
     HOME: "#ffffff",
-    BACK: "#ffffff"
+    RETRY: "#ff4400"
 };
 
 export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = () => {} }: MazeProps) {
@@ -105,14 +105,16 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
             skills: { 2: "home", 4: "contact", 5: "endless" },
             contact: { 2: "home", 3: "skills", 5: "endless" },
             endless: { 2: "home", 5: "endless" },
+            retry: { 2: "retry_action", 5: "home" },
           };
 
           const labelByDestination: Record<string, string> = {
-            projects: mazeId === "home" ? "PROJECTS" : "PROJECTS",
+            projects: "PROJECTS",
             skills: "SKILLS",
             contact: "CONTACT",
             endless: mazeId === "endless" ? "NEXT" : "ENDLESS",
-            home: mazeId === "home" ? "HOME" : "BACK",
+            home: "HOME",
+            retry_action: "RETRY",
           };
 
           const destinationId = portalByCell[mazeId]?.[cell];

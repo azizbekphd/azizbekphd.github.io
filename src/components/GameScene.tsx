@@ -6,7 +6,7 @@ import { Maze } from './Maze';
 import { Ball } from './Ball';
 import * as THREE from 'three';
 import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing';
-import { level1, level2, levelSkills, levelContact } from '../levels';
+import { level1, level2, levelSkills, levelContact, levelRetry } from '../levels';
 import { generateMaze } from '../utils/mazeGenerator';
 
 /* eslint-disable react-hooks/immutability */
@@ -15,7 +15,7 @@ const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.te
 const DROP_DISTANCE = 30;
 const CAMERA_HEIGHT = 20;
 
-type MazeId = 'home' | 'projects' | 'skills' | 'contact' | 'endless';
+type MazeId = 'home' | 'projects' | 'skills' | 'contact' | 'endless' | 'retry';
 type TransitionPhase = 'idle' | 'falling' | 'handoff';
 
 interface MazeDescriptor {
@@ -32,6 +32,11 @@ function mazeFromPath(path: string): MazeDescriptor {
   if (path === '/projects') return { id: 'projects', path, map: level2 };
   if (path === '/skills') return { id: 'skills', path, map: levelSkills };
   if (path === '/contact') return { id: 'contact', path, map: levelContact };
+
+  const retryMatch = path.match(/^\/endless\/([^/]+)\/retry$/);
+  if (retryMatch) {
+    return { id: 'retry', path, map: levelRetry };
+  }
 
   const endlessMatch = path.match(/^\/endless\/([^/]+)$/);
   if (endlessMatch) {
@@ -127,7 +132,7 @@ function SceneContent({
   controlsEnabled: boolean;
   isFailed: boolean;
   onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
-  onFail: () => void;
+  onFail: (entryPosition: [number, number, number]) => void;
   onEnterHandoff: () => void;
   onCompleteTransition: () => void;
   nextMazeOffset: [number, number];
@@ -364,22 +369,45 @@ export function GameScene({
         } else { setIsReady(true); }
     };
 
-    const handleFail = useCallback(() => {
-        setIsFailed(true);
-    }, []);
-
-    const handleRetry = useCallback(() => {
-        setIsFailed(false);
-        setNextMaze(null);
-        setTransitionPhase('idle');
-        setTransitionTarget(null);
-        setNextMazeOffset([0, 0]);
-        setBallKey((prev) => prev + 1);
-    }, []);
+    const handleFail = useCallback((entryPosition: [number, number, number]) => {
+      if (transitionPhase !== 'idle' || isFailed) return;
+      
+      const match = activeMaze.path.match(/^\/endless\/([^/]+)/);
+      if (!match) return; // Only endless mode has retry maze
+      
+      const seed = match[1];
+      const destination: MazeDescriptor = {
+          id: 'retry',
+          path: `/endless/${seed}/retry`,
+          map: levelRetry,
+      };
+      
+      const targetStartLocal = getStartPosition(destination.map, 0);
+      const offsetX = entryPosition[0] - targetStartLocal[0];
+      const offsetZ = entryPosition[2] - targetStartLocal[2];
+      
+      setNextMaze(destination);
+      setNextMazeOffset([offsetX, offsetZ]);
+      setTransitionTarget([entryPosition[0], -DROP_DISTANCE + 0.5, entryPosition[2]]);
+      setTransitionPhase('falling');
+    }, [activeMaze.path, transitionPhase, isFailed]);
 
     const handlePortalEnter = useCallback((destinationId: string, entryPosition: [number, number, number]) => {
       if (transitionPhase !== 'idle' || isFailed) return;
-      const destination = mazeFromDestination(destinationId);
+
+      let destination: MazeDescriptor;
+      if (destinationId === 'retry_action') {
+        const match = activeMaze.path.match(/^\/endless\/([^/]+)/);
+        const seed = match ? match[1] : randomSeed();
+        destination = {
+          id: 'endless',
+          path: `/endless/${seed}`,
+          map: generateMaze(seed, 15),
+        };
+      } else {
+        destination = mazeFromDestination(destinationId);
+      }
+
       const targetStartLocal = getStartPosition(destination.map, 0);
       
       // Calculate offset to align the next maze's start with current ball position
@@ -390,7 +418,7 @@ export function GameScene({
       setNextMazeOffset([offsetX, offsetZ]);
       setTransitionTarget([entryPosition[0], -DROP_DISTANCE + 0.5, entryPosition[2]]);
       setTransitionPhase('falling');
-    }, [transitionPhase, isFailed]);
+    }, [activeMaze.path, transitionPhase, isFailed]);
 
     const handleEnterHandoff = useCallback(() => {
       setTransitionPhase('handoff');
@@ -414,21 +442,6 @@ export function GameScene({
             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 999, color: 'white', background: 'rgba(0,0,0,0.8)', padding: '25px 45px', borderRadius: '50px', pointerEvents: 'none', fontFamily: 'sans-serif', border: '1px solid #4af', textAlign: 'center', boxShadow: '0 0 30px rgba(74,175,255,0.3)' }}>
                 <div style={{ fontSize: '0.8rem', opacity: 0.6, marginBottom: '5px' }}>INTERACTIVE PORTFOLIO</div>
                 <div style={{ fontWeight: 'bold', letterSpacing: '1px' }}>TAP TO ENTER</div>
-            </div>
-          )}
-
-          {isFailed && (
-            <div style={{ position: 'absolute', inset: 0, zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(30px)' }}>
-                <div style={{ padding: '40px', borderRadius: '20px', textAlign: 'center', color: 'white', fontFamily: 'sans-serif' }}>
-                    <h2 style={{ fontSize: '2rem', marginBottom: '10px', color: '#ff4400' }}>FAIL</h2>
-                    <p style={{ opacity: 0.8, marginBottom: '30px' }}>The ball fell into a trap</p>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); handleRetry(); }}
-                        style={{ background: '#ff4400', color: 'white', border: 'none', padding: '12px 30px', borderRadius: '50px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}
-                    >
-                        TRY AGAIN
-                    </button>
-                </div>
             </div>
           )}
 

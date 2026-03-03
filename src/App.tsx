@@ -13,7 +13,12 @@ function MazeExperience() {
     }
   }, [location.pathname, navigate]);
 
-  return <GameScene requestedPath={location.pathname} onPathChange={navigate} />;
+  return (
+    <GameScene
+      requestedPath={location.pathname}
+      onPathChange={(path) => navigate(path, { replace: path.endsWith('/retry') })}
+    />
+  );
 }
 
 function App() {
