@@ -45,10 +45,12 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
       const acc = event.accelerationIncludingGravity;
       if (!acc) return;
       const s = 5.0;
-      const ax = acc.x || 0;
-      const ay = acc.y || 0;
-      const az = acc.z || 9.8;
-      targetGravity.current.set(-ax * s, -az * s, ay * s);
+      const ax = acc.x ?? 0;
+      const ay = acc.y ?? 0;
+      const az = acc.z ?? 9.8;
+      const safeAz = Math.max(1.0, az);
+      
+      targetGravity.current.set(-ax * s, -safeAz * s, ay * s);
       const mobileMaxTilt = 18 * (Math.PI / 180);
       mobileRotation.current.x = (ay / 10) * mobileMaxTilt;
       mobileRotation.current.z = (ax / 10) * mobileMaxTilt;
@@ -61,7 +63,7 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
     if (!isReady) return;
     if (boardRef.current) {
         if (!isMobile) {
-            const maxTilt = 15 * (Math.PI / 210); // Subtle tilt
+            const maxTilt = 15 * (Math.PI / 210);
             const mouseX = state.pointer.x;
             const mouseY = state.pointer.y;
             boardRef.current.rotation.x = THREE.MathUtils.lerp(boardRef.current.rotation.x, -mouseY * maxTilt, 0.05);
