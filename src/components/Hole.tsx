@@ -1,6 +1,7 @@
-import { CylinderCollider, RigidBody, CuboidCollider } from '@react-three/rapier';
+import { CylinderCollider, RigidBody, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
 import { Text } from '@react-three/drei';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
 interface HoleProps {
@@ -13,6 +14,9 @@ interface HoleProps {
 }
 
 export function Hole({ position, destinationId, onEnter, label, color = "#00ccff", opacity = 1 }: HoleProps) {
+  const ballInRangeRef = useRef<RapierRigidBody | null>(null);
+  const holePosVec = useMemo(() => new THREE.Vector3(...position), [position]);
+
   const floorShape = useMemo(() => {
     const shape = new THREE.Shape();
     shape.moveTo(-0.5, -0.5);
@@ -26,6 +30,24 @@ export function Hole({ position, destinationId, onEnter, label, color = "#00ccff
     shape.holes.push(hole);
     return shape;
   }, []);
+
+  useFrame((_state, delta) => {
+    if (ballInRangeRef.current) {
+        const body = ballInRangeRef.current;
+        const ballPos = body.translation();
+        const dist = holePosVec.distanceTo(new THREE.Vector3(ballPos.x, position[1], ballPos.z));
+        
+        if (dist < 1.0) {
+            const pullStrength = 5.0 * (1 - dist);
+            const dir = new THREE.Vector3(position[0] - ballPos.x, 0, position[2] - ballPos.z).normalize();
+            body.applyImpulse({ 
+                x: dir.x * pullStrength * delta, 
+                y: -0.5 * delta,
+                z: dir.z * pullStrength * delta 
+            }, true);
+        }
+    }
+  });
 
   return (
     <group position={position}>
@@ -64,7 +86,7 @@ export function Hole({ position, destinationId, onEnter, label, color = "#00ccff
       )}
       
       {/* Physics: Sensor and Peripheral Support */}
-      <RigidBody type="fixed">
+      <RigidBody type="fixed" colliders={false}>
         {/* Entrance Sensor */}
         <CylinderCollider 
           args={[0.5, 0.2]} 
@@ -85,6 +107,25 @@ export function Hole({ position, destinationId, onEnter, label, color = "#00ccff
         <CuboidCollider args={[0.05, 0.5, 0.5]} position={[0.475, -0.5, 0]} />
         <CuboidCollider args={[0.425, 0.5, 0.05]} position={[0, -0.5, -0.475]} />
         <CuboidCollider args={[0.425, 0.5, 0.05]} position={[0, -0.5, 0.475]} />
+      </RigidBody>
+
+      {/* Physics: Suction Sensor */}
+      <RigidBody 
+        type="fixed" 
+        sensor 
+        colliders={false}
+        onIntersectionEnter={({ other }) => {
+          if (other.rigidBodyObject?.name === "ball") {
+            ballInRangeRef.current = other.rigidBody ?? null;
+          }
+        }}
+        onIntersectionExit={({ other }) => {
+          if (other.rigidBodyObject?.name === "ball") {
+            ballInRangeRef.current = null;
+          }
+        }}
+      >
+        <CylinderCollider args={[0.5, 1.0]} position={[0, 0, 0]} />
       </RigidBody>
     </group>
   );

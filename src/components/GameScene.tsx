@@ -6,7 +6,7 @@ import { Maze } from './Maze';
 import { Ball } from './Ball';
 import * as THREE from 'three';
 import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing';
-import { level1, level2, levelSkills, levelContact, levelRetry } from '../levels';
+import { levelHome, levelProjects, levelSkills, levelContact, levelRetry } from '../levels';
 import { generateMaze } from '../utils/mazeGenerator';
 
 /* eslint-disable react-hooks/immutability */
@@ -29,7 +29,7 @@ function randomSeed() {
 }
 
 function mazeFromPath(path: string): MazeDescriptor {
-  if (path === '/projects') return { id: 'projects', path, map: level2 };
+  if (path === '/projects') return { id: 'projects', path, map: levelProjects };
   if (path === '/skills') return { id: 'skills', path, map: levelSkills };
   if (path === '/contact') return { id: 'contact', path, map: levelContact };
 
@@ -48,7 +48,7 @@ function mazeFromPath(path: string): MazeDescriptor {
     };
   }
 
-  return { id: 'home', path: '/', map: level1 };
+  return { id: 'home', path: '/', map: levelHome };
 }
 
 function mazeFromDestination(destinationId: string): MazeDescriptor {
