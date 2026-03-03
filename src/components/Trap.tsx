@@ -1,5 +1,5 @@
-import { RigidBody, CylinderCollider, CuboidCollider, useRapier } from '@react-three/rapier';
-import { useState, useEffect, useMemo } from 'react';
+import { RigidBody, CylinderCollider, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -8,11 +8,23 @@ interface TrapProps {
   onFail: () => void;
 }
 
+const NEON_BLUE = new THREE.Color("#00ccff");
+const RED_ORANGE = new THREE.Color("#ff4400");
+
 export function Trap({ position, onFail }: TrapProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [transitionProgress, setTransitionProgress] = useState(0); // 0 = fully closed, 1 = fully open
-  const { world } = useRapier();
+  const [isPhysicsOpen, setIsPhysicsOpen] = useState(false);
   const trapPosVec = useMemo(() => new THREE.Vector3(...position), [position]);
+  
+  // Refs for animation state to avoid re-renders
+  const isOpenRef = useRef(false);
+  const progressRef = useRef(0);
+  const ballInRangeRef = useRef<RapierRigidBody | null>(null);
+  
+  // Refs for direct THREE.js updates
+  const doorRef = useRef<THREE.Mesh>(null);
+  const doorMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const borderRef = useRef<THREE.Mesh>(null);
+  const borderMatRef = useRef<THREE.MeshBasicMaterial>(null);
 
   const floorShape = useMemo(() => {
     const shape = new THREE.Shape();
@@ -23,63 +35,73 @@ export function Trap({ position, onFail }: TrapProps) {
     shape.lineTo(-0.5, -0.5);
 
     const hole = new THREE.Path();
-    hole.absarc(0, 0, 0.45, 0, Math.PI * 2, true); // Slightly larger visual hole
+    hole.absarc(0, 0, 0.45, 0, Math.PI * 2, true);
     shape.holes.push(hole);
     return shape;
   }, []);
 
-  // Periodically toggle the trap
   useEffect(() => {
     const interval = setInterval(() => {
-      setIsOpen(prev => !prev);
+      isOpenRef.current = !isOpenRef.current;
     }, 4000);
     return () => clearInterval(interval);
   }, []);
 
-  // Handle visual transition and suction
   useFrame((_state, delta) => {
     const speed = 4.0;
-    if (isOpen && transitionProgress < 1) {
-      setTransitionProgress(prev => Math.min(1, prev + delta * speed));
-    } else if (!isOpen && transitionProgress > 0) {
-      setTransitionProgress(prev => Math.max(0, prev - delta * speed));
+    const isOpen = isOpenRef.current;
+    
+    // Update progress
+    if (isOpen && progressRef.current < 1) {
+      progressRef.current = Math.min(1, progressRef.current + delta * speed);
+    } else if (!isOpen && progressRef.current > 0) {
+      progressRef.current = Math.max(0, progressRef.current - delta * speed);
     }
 
-    // Suction logic: Pull ball towards center when open
-    if (isOpen && transitionProgress > 0.6) {
-      world.forEachRigidBody((body) => {
-        // In this setup, we identify the ball by checking its mass/type or name
-        // The Ball component has name="ball" on the RigidBody
-        if (body.isDynamic()) {
-          const ballPos = body.translation();
-          const dist = trapPosVec.distanceTo(new THREE.Vector3(ballPos.x, position[1], ballPos.z));
-          
-          if (dist < 1.0) { // Suction radius
-            const pullStrength = 8.0 * (1 - dist); // Stronger as you get closer
+    const t = progressRef.current;
+
+    // 1. Update Door Visuals (Directly via refs)
+    if (doorRef.current) {
+        doorRef.current.position.y = -0.05 - (t * 0.85);
+    }
+    if (doorMatRef.current) {
+        doorMatRef.current.opacity = 1 - (t * 0.4);
+        doorMatRef.current.color.set(isOpen ? "#333333" : "#cccccc");
+    }
+
+    // 2. Update Border Visuals
+    if (borderMatRef.current) {
+        borderMatRef.current.color.copy(NEON_BLUE).lerp(RED_ORANGE, t);
+    }
+    if (borderRef.current) {
+        const pulse = isOpen ? Math.sin(Date.now() * 0.01) * 0.2 + 0.8 : 1;
+        borderRef.current.scale.setScalar(isOpen ? pulse : 1);
+    }
+
+    // 3. Sync Physics State (Thresholded re-render)
+    if (t > 0.8) {
+      if (!isPhysicsOpen) setIsPhysicsOpen(true);
+    } else if (t < 0.2) {
+      if (isPhysicsOpen) setIsPhysicsOpen(false);
+    }
+
+    // 4. Suction logic: Only pull if ball is in range and trap is open
+    if (isPhysicsOpen && t > 0.6 && ballInRangeRef.current) {
+        const body = ballInRangeRef.current;
+        const ballPos = body.translation();
+        const dist = trapPosVec.distanceTo(new THREE.Vector3(ballPos.x, position[1], ballPos.z));
+        
+        if (dist < 1.0) {
+            const pullStrength = 10.0 * (1 - dist);
             const dir = new THREE.Vector3(position[0] - ballPos.x, 0, position[2] - ballPos.z).normalize();
             body.applyImpulse({ 
                 x: dir.x * pullStrength * delta, 
-                y: -1.0 * delta, // Slight downward pull too
+                y: -1.5 * delta,
                 z: dir.z * pullStrength * delta 
             }, true);
-          }
         }
-      });
     }
   });
-
-  const borderColor = new THREE.Color();
-  const emissiveColor = new THREE.Color();
-  
-  // Neon Blue (#00ccff) to Red-Orange (#ff4400)
-  const neonBlue = new THREE.Color("#00ccff");
-  const redOrange = new THREE.Color("#ff4400");
-  
-  borderColor.lerpColors(neonBlue, redOrange, transitionProgress);
-  
-  // Pulsing effect when open
-  const pulse = isOpen ? Math.sin(Date.now() * 0.01) * 0.2 + 0.8 : 1;
-  emissiveColor.copy(neonBlue).multiplyScalar(0.2 * (1 - transitionProgress));
 
   return (
     <group position={position}>
@@ -96,46 +118,59 @@ export function Trap({ position, onFail }: TrapProps) {
       </mesh>
 
       {/* Trap Door Visual */}
-      <mesh position={[0, -0.05 - (transitionProgress * 0.85), 0]} castShadow receiveShadow>
+      <mesh ref={doorRef} position={[0, -0.05, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[0.44, 0.44, 0.05, 32]} />
         <meshStandardMaterial 
-          color={isOpen ? "#333" : "#ccc"} 
-          emissive={emissiveColor}
+          ref={doorMatRef}
+          color="#ccc" 
           metalness={0.4} 
           roughness={0.6} 
-          opacity={1 - (transitionProgress * 0.4)}
           transparent
         />
       </mesh>
 
       {/* Glowing Border */}
-      <mesh position={[0, 0.01, 0]} rotation-x={-Math.PI / 2} scale={isOpen ? pulse : 1}>
+      <mesh ref={borderRef} position={[0, 0.01, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[0.44, 0.52, 32]} />
-        <meshBasicMaterial color={borderColor} toneMapped={false} />
+        <meshBasicMaterial ref={borderMatRef} color={NEON_BLUE} toneMapped={false} />
       </mesh>
 
-      {/* Physics: Main floor collider - Solid when closed */}
-      {!isOpen && transitionProgress < 0.1 ? (
-        <RigidBody type="fixed" friction={0.1} restitution={0.2}>
-          <CuboidCollider args={[0.5, 0.5, 0.5]} position={[0, -0.5, 0]} />
-        </RigidBody>
-      ) : (
-        // Tighter peripheral colliders to support corners - less safe space
-        <RigidBody type="fixed" friction={0.1} restitution={0.2}>
-          <CuboidCollider args={[0.05, 0.5, 0.5]} position={[-0.475, -0.5, 0]} />
-          <CuboidCollider args={[0.05, 0.5, 0.5]} position={[0.475, -0.5, 0]} />
-          <CuboidCollider args={[0.425, 0.5, 0.05]} position={[0, -0.5, -0.475]} />
-          <CuboidCollider args={[0.425, 0.5, 0.05]} position={[0, -0.5, 0.475]} />
-        </RigidBody>
-      )}
+      {/* Physics: Main floor collider - Solid fixed body when closed, unmounted when open */}
+      <RigidBody type="fixed" friction={0.1} restitution={0.2} colliders={false}>
+        {!isPhysicsOpen && <CuboidCollider args={[0.5, 0.5, 0.5]} position={[0, -0.5, 0]} />}
+      </RigidBody>
 
-      {/* Physics: Larger failure sensor */}
-      <RigidBody type="fixed" sensor onIntersectionEnter={({ other }) => {
-        if (other.rigidBodyObject?.name === "ball") {
+      {/* Fixed peripheral support corners - always present */}
+      <RigidBody type="fixed" friction={0.1} restitution={0.2} colliders={false}>
+        <CuboidCollider args={[0.1, 0.5, 0.5]} position={[-0.45, -0.5, 0]} />
+        <CuboidCollider args={[0.1, 0.5, 0.5]} position={[0.45, -0.5, 0]} />
+        <CuboidCollider args={[0.4, 0.5, 0.1]} position={[0, -0.5, -0.45]} />
+        <CuboidCollider args={[0.4, 0.5, 0.1]} position={[0, -0.5, 0.45]} />
+      </RigidBody>
+
+      {/* Physics: Suction Sensor */}
+      <RigidBody type="fixed" sensor colliders={false}
+        onIntersectionEnter={({ other }) => {
+          if (other.rigidBodyObject?.name === "ball") {
+            ballInRangeRef.current = other.rigidBody ?? null;
+          }
+        }}
+        onIntersectionExit={({ other }) => {
+          if (other.rigidBodyObject?.name === "ball") {
+            ballInRangeRef.current = null;
+          }
+        }}
+      >
+        <CylinderCollider args={[0.5, 1.0]} position={[0, 0, 0]} />
+      </RigidBody>
+
+      {/* Physics: Failure sensor - only triggers if trap is open */}
+      <RigidBody type="fixed" sensor colliders={false} onIntersectionEnter={({ other }) => {
+        if (other.rigidBodyObject?.name === "ball" && isPhysicsOpen) {
           onFail();
         }
       }}>
-        <CylinderCollider args={[0.2, 0.48]} position={[0, -0.7, 0]} />
+        <CylinderCollider args={[0.3, 0.4]} position={[0, -1.0, 0]} />
       </RigidBody>
     </group>
   );

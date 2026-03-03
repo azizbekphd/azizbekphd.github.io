@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics } from '@react-three/rapier';
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import { Maze } from './Maze';
 import { Ball } from './Ball';
 import * as THREE from 'three';
@@ -138,14 +138,18 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
         } else { setIsReady(true); }
     };
 
-    const handleFail = () => {
+    const handleFail = useCallback(() => {
         setIsFailed(true);
-    };
+    }, []);
 
-    const handleRetry = () => {
+    const handleRetry = useCallback(() => {
         setIsFailed(false);
         setGameKey(prev => prev + 1);
-    };
+    }, []);
+
+    const handleNavigate = useCallback((path: string) => {
+        onNavigate(path);
+    }, [onNavigate]);
 
     return (
         <div onClick={handleInitialTap} style={{ position: 'fixed', inset: 0, width: '100dvw', height: '100dvh', background: '#111', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -180,7 +184,7 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
             dpr={[1, 2]}
           >
               <color attach="background" args={['#1a1a1a']} />
-              <SceneContent map={map} onNavigate={onNavigate} isReady={isReady} onFail={handleFail} />
+              <SceneContent map={map} onNavigate={handleNavigate} isReady={isReady} onFail={handleFail} />
           </Canvas>
         </div>
     )

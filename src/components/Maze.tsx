@@ -1,7 +1,7 @@
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { Hole } from './Hole';
 import { Trap } from './Trap';
-import { useMemo, useRef, useLayoutEffect } from 'react';
+import { useMemo, useRef, useLayoutEffect, memo } from 'react';
 import * as THREE from 'three';
 
 interface MazeProps {
@@ -23,7 +23,7 @@ const PORTAL_COLORS: Record<string, string> = {
     BACK: "#ffffff"
 };
 
-export function Maze({ map, onNavigate, onFail = () => {} }: MazeProps) {
+export const Maze = memo(function Maze({ map, onNavigate, onFail = () => {} }: MazeProps) {
   const wallMeshRef = useRef<THREE.InstancedMesh>(null);
   const floorMeshRef = useRef<THREE.InstancedMesh>(null);
 
@@ -169,4 +169,5 @@ export function Maze({ map, onNavigate, onFail = () => {} }: MazeProps) {
       {trapsJSX}
     </group>
   );
-}
+});
+
