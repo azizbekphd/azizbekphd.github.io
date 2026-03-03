@@ -81,11 +81,32 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
 
   const pathSet = new Set(pathList.map(p => `${p[0]},${p[1]}`));
 
+  // Place traps (6) on the main path - perfectly distributed by percentage
+  if (pathList.length > 12) {
+    const targetTraps = 6;
+    const distributionPoints: number[] = [];
+    const step = 1 / targetTraps;
+    let lastValue = 0;
+    for (let i = 0; i < targetTraps; i++) {
+      lastValue += step;
+      distributionPoints.push(lastValue);
+    }
+    
+    distributionPoints.forEach(percent => {
+      const index = Math.floor(pathList.length * percent);
+      const [tx, tz] = pathList[index];
+      // Only place on empty floor
+      if (maze[tz][tx] === 0) {
+        maze[tz][tx] = 6;
+      }
+    });
+  }
+
   // Place "Back Home" hole (2) - Ensure it's NOT on the path
   let placedHome = false;
   for (let z = 1; z < size - 1 && !placedHome; z++) {
     for (let x = size - 2; x > 1 && !placedHome; x--) {
-      if (maze[z][x] === 0 && maze[z][x] !== 9 && maze[z][x] !== 5 && !pathSet.has(`${x},${z}`)) {
+      if (maze[z][x] === 0 && maze[z][x] !== 9 && maze[z][x] !== 5 && maze[z][x] !== 6 && !pathSet.has(`${x},${z}`)) {
         maze[z][x] = 2;
         placedHome = true;
       }

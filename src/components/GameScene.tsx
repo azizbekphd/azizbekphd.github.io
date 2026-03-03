@@ -8,7 +8,7 @@ import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocess
 
 const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-function SceneContent({ map, onNavigate, isReady }: { map: number[][], onNavigate: (path: string) => void, isReady: boolean }) {
+function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], onNavigate: (path: string) => void, isReady: boolean, onFail: () => void }) {
   const [gravity, setGravity] = useState<[number, number, number]>([0, -30, 0]);
   const { camera, size } = useThree();
   const targetGravity = useRef<THREE.Vector3>(new THREE.Vector3(0, -30, 0));
@@ -61,7 +61,7 @@ function SceneContent({ map, onNavigate, isReady }: { map: number[][], onNavigat
     if (!isReady) return;
     if (boardRef.current) {
         if (!isMobile) {
-            const maxTilt = 15 * (Math.PI / 180); 
+            const maxTilt = 15 * (Math.PI / 210); // Subtle tilt
             const mouseX = state.pointer.x;
             const mouseY = state.pointer.y;
             boardRef.current.rotation.x = THREE.MathUtils.lerp(boardRef.current.rotation.x, -mouseY * maxTilt, 0.05);
@@ -98,7 +98,7 @@ function SceneContent({ map, onNavigate, isReady }: { map: number[][], onNavigat
        <Physics gravity={gravity} key={isReady ? 'active' : 'inactive'}>
          <Suspense fallback={null}>
            <group ref={boardRef}>
-             <Maze map={map} onNavigate={onNavigate} />
+             <Maze map={map} onNavigate={onNavigate} onFail={onFail} />
              {(!isMobile || isReady) && <Ball position={startPos} />} 
            </group>
          </Suspense>
@@ -116,6 +116,8 @@ function SceneContent({ map, onNavigate, isReady }: { map: number[][], onNavigat
 export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (path: string) => void }) {
     const [isReady, setIsReady] = useState(!isMobile);
     const [isLandscape, setIsLandscape] = useState(false);
+    const [isFailed, setIsFailed] = useState(false);
+    const [gameKey, setGameKey] = useState(0);
 
     useEffect(() => {
         if (!isMobile) return;
@@ -133,6 +135,15 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
         } else { setIsReady(true); }
     };
 
+    const handleFail = () => {
+        setIsFailed(true);
+    };
+
+    const handleRetry = () => {
+        setIsFailed(false);
+        setGameKey(prev => prev + 1);
+    };
+
     return (
         <div onClick={handleInitialTap} style={{ position: 'fixed', inset: 0, width: '100dvw', height: '100dvh', background: '#111', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {isMobile && isLandscape && <OrientationOverlay />}
@@ -142,9 +153,25 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
                 <div style={{ fontWeight: 'bold', letterSpacing: '1px' }}>TAP TO ENTER</div>
             </div>
           )}
-          <Canvas shadows="pcf" camera={{ position: [0, 25, 0], fov: 40 }} dpr={[1, 2]}>
+
+          {isFailed && (
+            <div style={{ position: 'absolute', inset: 0, zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(5px)' }}>
+                <div style={{ background: '#222', padding: '40px', borderRadius: '20px', border: '2px solid #ff4400', textAlign: 'center', color: 'white', fontFamily: 'sans-serif', boxShadow: '0 0 50px rgba(255,68,0,0.4)' }}>
+                    <h2 style={{ fontSize: '2rem', marginBottom: '10px', color: '#ff4400' }}>MISSION FAILED</h2>
+                    <p style={{ opacity: 0.8, marginBottom: '30px' }}>The ball fell into a trap!</p>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); handleRetry(); }}
+                        style={{ background: '#ff4400', color: 'white', border: 'none', padding: '12px 30px', borderRadius: '50px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}
+                    >
+                        TRY AGAIN
+                    </button>
+                </div>
+            </div>
+          )}
+
+          <Canvas key={gameKey} shadows="pcf" camera={{ position: [0, 25, 0], fov: 40 }} dpr={[1, 2]}>
               <color attach="background" args={['#1a1a1a']} />
-              <SceneContent map={map} onNavigate={onNavigate} isReady={isReady} />
+              <SceneContent map={map} onNavigate={onNavigate} isReady={isReady} onFail={handleFail} />
           </Canvas>
         </div>
     )

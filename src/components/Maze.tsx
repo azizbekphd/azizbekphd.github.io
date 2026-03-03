@@ -1,11 +1,13 @@
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { Hole } from './Hole';
+import { Trap } from './Trap';
 import { useMemo, useRef, useLayoutEffect } from 'react';
 import * as THREE from 'three';
 
 interface MazeProps {
   map: number[][];
   onNavigate: (path: string) => void;
+  onFail?: () => void;
 }
 
 const CELL_SIZE = 1;
@@ -21,14 +23,14 @@ const PORTAL_COLORS: Record<string, string> = {
     BACK: "#ffffff"
 };
 
-export function Maze({ map, onNavigate }: MazeProps) {
+export function Maze({ map, onNavigate, onFail = () => {} }: MazeProps) {
   const wallMeshRef = useRef<THREE.InstancedMesh>(null);
   const floorMeshRef = useRef<THREE.InstancedMesh>(null);
 
   const width = map[0].length;
   const height = map.length;
 
-  const { wallVisuals, floorVisuals, collidersJSX, holesJSX } = useMemo(() => {
+  const { wallVisuals, floorVisuals, collidersJSX, holesJSX, trapsJSX } = useMemo(() => {
     const wallV: [number, number, number][] = [];
     const floorV: [number, number, number][] = [];
     
@@ -86,12 +88,15 @@ export function Maze({ map, onNavigate }: MazeProps) {
     );
 
     const holes: any[] = [];
+    const traps: any[] = [];
     map.forEach((row, z) => {
       row.forEach((cell, x) => {
         const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
         const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
 
-        if (cell >= 2 && cell <= 5) {
+        if (cell === 6) {
+          traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} />);
+        } else if (cell >= 2 && cell <= 5) {
           let route = "/"; let label = "";
           if (cell === 2) { route = "/projects"; label = "PROJECTS"; }
           if (cell === 3) { route = "/skills"; label = "SKILLS"; }
@@ -123,8 +128,8 @@ export function Maze({ map, onNavigate }: MazeProps) {
       });
     });
 
-    return { wallVisuals: wallV, floorVisuals: floorV, collidersJSX: colliders, holesJSX: holes };
-  }, [map, width, height, onNavigate]);
+    return { wallVisuals: wallV, floorVisuals: floorV, collidersJSX: colliders, holesJSX: holes, trapsJSX: traps };
+  }, [map, width, height, onNavigate, onFail]);
 
   useLayoutEffect(() => {
     const temp = new THREE.Object3D();
@@ -161,6 +166,7 @@ export function Maze({ map, onNavigate }: MazeProps) {
 
       {collidersJSX}
       {holesJSX}
+      {trapsJSX}
     </group>
   );
 }
