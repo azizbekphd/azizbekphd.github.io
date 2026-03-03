@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Physics } from '@react-three/rapier';
-import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
+import { Physics, useRapier } from '@react-three/rapier';
+import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
 import { Maze } from './Maze';
 import { Ball } from './Ball';
 import * as THREE from 'three';
@@ -8,8 +8,22 @@ import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocess
 
 const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+// Separate component to handle gravity updates directly on the physics world
+function GravityController({ targetGravity, isReady }: { targetGravity: React.MutableRefObject<THREE.Vector3>, isReady: boolean }) {
+  const { world } = useRapier();
+  
+  useFrame(() => {
+    if (!isReady) return;
+    // Mutate world gravity directly to avoid React re-renders
+    world.gravity.x = THREE.MathUtils.lerp(world.gravity.x, targetGravity.current.x, 0.05);
+    world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravity.current.y, 0.05);
+    world.gravity.z = THREE.MathUtils.lerp(world.gravity.z, targetGravity.current.z, 0.05);
+  });
+  
+  return null;
+}
+
 function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], onNavigate: (path: string) => void, isReady: boolean, onFail: () => void }) {
-  const [gravity, setGravity] = useState<[number, number, number]>([0, -30, 0]);
   const { camera, size } = useThree();
   const targetGravity = useRef<THREE.Vector3>(new THREE.Vector3(0, -30, 0));
   const boardRef = useRef<THREE.Group>(null);
@@ -19,14 +33,16 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
   const width = map[0].length;
   const height = map.length;
   
-  let startPos: [number, number, number] = [0, 0.5, 0];
-  for(let z=0; z<height; z++) {
-      for(let x=0; x<width; x++) {
-          if(map[z][x] === 9) {
-              startPos = [(x - width / 2) * CELL_SIZE + CELL_SIZE / 2, 0.5, (z - height / 2) * CELL_SIZE + CELL_SIZE / 2];
-          }
-      }
-  }
+  const startPos = useMemo(() => {
+    for(let z=0; z<height; z++) {
+        for(let x=0; x<width; x++) {
+            if(map[z][x] === 9) {
+                return [(x - width / 2) * CELL_SIZE + CELL_SIZE / 2, 0.5, (z - height / 2) * CELL_SIZE + CELL_SIZE / 2] as [number, number, number];
+            }
+        }
+    }
+    return [0, 0.5, 0] as [number, number, number];
+  }, [map, width, height]);
 
   useEffect(() => {
     const aspect = size.width / size.height;
@@ -75,9 +91,6 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
         }
     }
     camera.lookAt(0, 0, 0);
-    const currentG = new THREE.Vector3(...gravity);
-    currentG.lerp(targetGravity.current, 0.05);
-    setGravity([currentG.x, currentG.y, currentG.z]);
   });
 
   return (
@@ -98,7 +111,8 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
        />
        <pointLight position={[-15, 15, -15]} intensity={1.0} />
 
-       <Physics gravity={gravity} key={isReady ? 'active' : 'inactive'}>
+       <Physics key={isReady ? 'active' : 'inactive'}>
+         <GravityController targetGravity={targetGravity} isReady={isReady} />
          <Suspense fallback={null}>
            <group ref={boardRef}>
              <Maze map={map} onNavigate={onNavigate} onFail={onFail} />
