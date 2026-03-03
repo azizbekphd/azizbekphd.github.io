@@ -131,7 +131,7 @@ export function Trap({ position, onFail }: TrapProps) {
 
       {/* Physics: Larger failure sensor */}
       <RigidBody type="fixed" sensor onIntersectionEnter={({ other }) => {
-        if (other.rigidBodyObject?.name === "ball" && (isOpen || transitionProgress > 0.4)) {
+        if (other.rigidBodyObject?.name === "ball") {
           onFail();
         }
       }}>
