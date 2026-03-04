@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics, RapierRigidBody, useRapier } from '@react-three/rapier';
-import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, Suspense, useCallback, useMemo } from 'react';
 import type { MutableRefObject } from 'react';
 import { Maze } from './Maze';
 import { Ball } from './Ball';
@@ -112,7 +112,6 @@ function SceneContent({
   transitionPhase,
   transitionTarget,
   ballSpawnPosition,
-  ballKey,
   isReady,
   controlsEnabled,
   isFailed,
@@ -121,13 +120,13 @@ function SceneContent({
   onEnterHandoff,
   onCompleteTransition,
   nextMazeOffset,
+  ballRef,
 }: {
   activeMaze: MazeDescriptor;
   nextMaze: MazeDescriptor | null;
   transitionPhase: TransitionPhase;
   transitionTarget: [number, number, number] | null;
   ballSpawnPosition: [number, number, number];
-  ballKey: number;
   isReady: boolean;
   controlsEnabled: boolean;
   isFailed: boolean;
@@ -136,20 +135,107 @@ function SceneContent({
   onEnterHandoff: () => void;
   onCompleteTransition: () => void;
   nextMazeOffset: [number, number];
+  ballRef: MutableRefObject<RapierRigidBody | null>;
 }) {
   const { camera } = useThree();
   const targetGravity = useRef<THREE.Vector3>(new THREE.Vector3(0, -30, 0));
   const activeBoardRef = useRef<THREE.Group>(null);
   const nextBoardRef = useRef<THREE.Group>(null);
-  const [activeOpacity, setActiveOpacity] = useState(1);
-  const [nextOpacity, setNextOpacity] = useState(0);
+  const activeOpacityRef = useRef(1);
+  const nextOpacityRef = useRef(0);
   const mobileRotation = useRef({ x: 0, z: 0 });
-  const ballRef = useRef<RapierRigidBody | null>(null);
   const transitionHandledRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const lastActiveMazePath = useRef(activeMaze.path);
   const lookTarget = useRef(new THREE.Vector3(0, 0, 0));
   const lightRef = useRef<THREE.DirectionalLight>(null);
+
+  // Cache for materials to avoid traversal in useFrame
+  const activeMaterialsRef = useRef<{ material: THREE.Material, text?: any }[]>([]);
+  const nextMaterialsRef = useRef<{ material: THREE.Material, text?: any }[]>([]);
+  const [isNextMazeVisible, setIsNextMazeVisible] = useState(false);
+
+  const collectMaterials = useCallback((group: THREE.Group | null) => {
+    const collected: { material: THREE.Material, text?: any }[] = [];
+    if (!group) return collected;
+    group.traverse((node) => {
+      if (node.userData.skipOpacity) return;
+      if ((node as THREE.Mesh).isMesh) {
+        const mesh = node as THREE.Mesh;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((mat) => {
+          if (mat) {
+            mat.transparent = true;
+            collected.push({ material: mat });
+          }
+        });
+      }
+      if ((node as any).isText || (node as any).fillOpacity !== undefined) {
+        collected.push({ material: (node as any).material, text: node });
+      }
+    });
+    return collected;
+  }, []);
+
+  const updateOpacity = useCallback((items: { material: THREE.Material, text?: any }[], opacity: number) => {
+    items.forEach((item) => {
+      if (item.text) {
+        item.text.fillOpacity = opacity;
+      } else {
+        const mat = item.material;
+        mat.userData.globalOpacity = opacity;
+        const local = mat.userData.localOpacity !== undefined ? mat.userData.localOpacity : 1;
+        mat.opacity = local * opacity;
+      }
+    });
+  }, []);
+
+  // Use layout effect for immediate opacity application before paint
+  useLayoutEffect(() => {
+    if (activeBoardRef.current) {
+      activeMaterialsRef.current = collectMaterials(activeBoardRef.current);
+      updateOpacity(activeMaterialsRef.current, activeOpacityRef.current);
+    }
+  }, [activeMaze.id, collectMaterials, updateOpacity]);
+
+  useLayoutEffect(() => {
+    if (nextMaze) {
+        setIsNextMazeVisible(false);
+        // Immediate collection and visibility setup to avoid lag
+        if (nextBoardRef.current) {
+            nextMaterialsRef.current = collectMaterials(nextBoardRef.current);
+            updateOpacity(nextMaterialsRef.current, 0); 
+            setIsNextMazeVisible(true);
+        }
+    } else {
+        nextMaterialsRef.current = [];
+        setIsNextMazeVisible(false);
+    }
+  }, [nextMaze?.id, collectMaterials, updateOpacity]);
+
+  // Synchronize ball and camera teleportation with maze swap to prevent jiggles and tunneling
+  useLayoutEffect(() => {
+    if (ballRef.current && activeMaze.path !== lastActiveMazePath.current) {
+        const targetStartLocal = getStartPosition(activeMaze.map, 0);
+        
+        // Zero out velocities and teleport to prevent tunneling and preserved momentum from fall
+        ballRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
+        ballRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        ballRef.current.setTranslation({ x: targetStartLocal[0], y: 0.5, z: targetStartLocal[2] }, true);
+
+        // Teleport camera and its target to maintain relative position to the ball
+        // This eliminates the "jiggle" by ensuring the jump happens in the same frame as the maze swap
+        camera.position.x -= nextMazeOffset[0];
+        camera.position.y += DROP_DISTANCE;
+        camera.position.z -= nextMazeOffset[1];
+        lookTarget.current.x -= nextMazeOffset[0];
+        lookTarget.current.y += DROP_DISTANCE;
+        lookTarget.current.z -= nextMazeOffset[1];
+        camera.lookAt(lookTarget.current);
+
+        lastActiveMazePath.current = activeMaze.path;
+    }
+  }, [activeMaze.path, camera, nextMazeOffset, ballRef]);
 
   useEffect(() => {
     camera.up.set(0, 0, -1);
@@ -176,32 +262,17 @@ function SceneContent({
   }, [isReady]);
 
   useEffect(() => {
-    transitionHandledRef.current = false;
-    handoffStartedRef.current = false;
-  }, [ballKey]);
-
-  useEffect(() => {
     if (transitionPhase === 'idle') {
       transitionHandledRef.current = false;
       handoffStartedRef.current = false;
-      setActiveOpacity(1);
-      setNextOpacity(0);
+      activeOpacityRef.current = 1;
+      nextOpacityRef.current = 0;
+      updateOpacity(activeMaterialsRef.current, 1);
+      updateOpacity(nextMaterialsRef.current, 0);
     }
-  }, [transitionPhase]);
+  }, [transitionPhase, updateOpacity]);
 
   useFrame((state) => {
-    // Detect Maze Swap and teleport camera to avoid jump
-    if (activeMaze.path !== lastActiveMazePath.current) {
-      camera.position.y += DROP_DISTANCE;
-      lookTarget.current.y += DROP_DISTANCE;
-      // Also teleport horizontally to compensate for the maze offset being reset to [0,0]
-      camera.position.x -= nextMazeOffset[0];
-      camera.position.z -= nextMazeOffset[1];
-      lookTarget.current.x -= nextMazeOffset[0];
-      lookTarget.current.z -= nextMazeOffset[1];
-      lastActiveMazePath.current = activeMaze.path;
-    }
-
     if (activeBoardRef.current) {
       if (controlsEnabled && !isFailed && isReady) {
         if (!isMobile) {
@@ -232,22 +303,25 @@ function SceneContent({
       const velocity = ball.linvel();
 
       // Fade transitions based on ball height
-      // Active maze fades out as ball drops from 0 to -10
       const aOpacity = THREE.MathUtils.clamp(1 + current.y / 10, 0, 1);
-      if (activeOpacity !== aOpacity) setActiveOpacity(aOpacity);
+      if (activeOpacityRef.current !== aOpacity) {
+        activeOpacityRef.current = aOpacity;
+        updateOpacity(activeMaterialsRef.current, aOpacity);
+      }
 
-      // Next maze fades in as ball approaches transitionTarget.y
-      // transitionTarget.y is roughly -DROP_DISTANCE + 0.5
       const distToTarget = Math.abs(current.y - transitionTarget[1]);
       const nOpacity = THREE.MathUtils.clamp(1 - distToTarget / 15, 0, 1);
-      if (nextOpacity !== nOpacity) setNextOpacity(nOpacity);
+      if (nextOpacityRef.current !== nOpacity) {
+        nextOpacityRef.current = nOpacity;
+        updateOpacity(nextMaterialsRef.current, nOpacity);
+      }
 
       if (transitionPhase === 'falling') {
-        const steer = 0.08;
+        const steer = 0.12;
         const nextX = THREE.MathUtils.lerp(current.x, transitionTarget[0], steer);
         const nextZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], steer);
         ball.setTranslation({ x: nextX, y: current.y, z: nextZ }, true);
-        ball.setLinvel({ x: 0, y: Math.min(velocity.y, -10), z: 0 }, true);
+        ball.setLinvel({ x: 0, y: Math.min(velocity.y, -15), z: 0 }, true);
 
         if (!handoffStartedRef.current && current.y <= transitionTarget[1] + 2.5) {
           handoffStartedRef.current = true;
@@ -256,17 +330,14 @@ function SceneContent({
       }
 
       if (transitionPhase === 'handoff') {
-        const handoffSteer = 0.15;
+        const handoffSteer = 0.25;
         const steerX = THREE.MathUtils.lerp(current.x, transitionTarget[0], handoffSteer);
         const steerZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], handoffSteer);
         ball.setTranslation({ x: steerX, y: current.y, z: steerZ }, true);
-        const nearLanding = current.y <= transitionTarget[1] + 0.55;
-        const stable = Math.abs(velocity.y) <= 2.5;
-        if (!transitionHandledRef.current && nearLanding && stable) {
+        
+        const nearLanding = current.y <= transitionTarget[1] + 0.6;
+        if (!transitionHandledRef.current && nearLanding) {
           transitionHandledRef.current = true;
-          ball.setTranslation({ x: transitionTarget[0], y: transitionTarget[1], z: transitionTarget[2] }, true);
-          ball.setLinvel({ x: 0, y: 0, z: 0 }, true);
-          ball.setAngvel({ x: 0, y: 0, z: 0 }, true);
           onCompleteTransition();
         }
       }
@@ -274,21 +345,17 @@ function SceneContent({
 
     if (!ballRef.current) return
     const cameraTarget = ballRef.current.translation()
-    const lookX = cameraTarget.x;
-    const lookY = cameraTarget.y;
-    const lookZ = cameraTarget.z;
     
-    // Direct assignment to keep the ball perfectly centered without lag
-    camera.position.x = lookX;
-    camera.position.y = lookY + CAMERA_HEIGHT;
-    camera.position.z = lookZ;
+    camera.position.x = cameraTarget.x;
+    camera.position.y = cameraTarget.y + CAMERA_HEIGHT;
+    camera.position.z = cameraTarget.z;
     
-    lookTarget.current.set(lookX, lookY, lookZ);
+    lookTarget.current.set(cameraTarget.x, cameraTarget.y, cameraTarget.z);
     camera.lookAt(lookTarget.current);
 
     if (lightRef.current) {
-      lightRef.current.position.set(lookX + 15, lookY + 25, lookZ + 15);
-      lightRef.current.target.position.set(lookX, lookY, lookZ);
+      lightRef.current.position.set(cameraTarget.x + 15, cameraTarget.y + 25, cameraTarget.z + 15);
+      lightRef.current.target.position.set(cameraTarget.x, cameraTarget.y, cameraTarget.z);
       lightRef.current.target.updateMatrixWorld();
     }
   });
@@ -326,11 +393,9 @@ function SceneContent({
               mazeId={activeMaze.id} 
               onPortalEnter={onPortalEnter} 
               onFail={onFail} 
-              opacity={transitionPhase === 'idle' ? 1 : activeOpacity}
             />
             {(!isMobile || isReady) && (
               <Ball 
-                key={ballKey} 
                 ref={ballRef} 
                 position={ballSpawnPosition} 
                 restitution={transitionPhase === 'idle' ? 0 : (transitionPhase === 'handoff' ? 0 : 0.6)} 
@@ -338,13 +403,16 @@ function SceneContent({
             )}
            </group>
           {nextMaze && (
-            <group ref={nextBoardRef} position={[nextMazeOffset[0], -DROP_DISTANCE, nextMazeOffset[1]]}>
+            <group 
+              ref={nextBoardRef} 
+              visible={isNextMazeVisible}
+              position={[nextMazeOffset[0], -DROP_DISTANCE, nextMazeOffset[1]]}
+            >
               <Maze 
                 map={nextMaze.map} 
                 mazeId={nextMaze.id} 
                 onPortalEnter={() => {}} 
                 onFail={() => {}} 
-                opacity={transitionPhase === 'idle' ? 0 : nextOpacity}
               />
             </group>
           )}
@@ -370,12 +438,12 @@ export function GameScene({
     const [isReady, setIsReady] = useState(!isMobile);
     const [isLandscape, setIsLandscape] = useState(false);
     const [isFailed, setIsFailed] = useState(false);
-    const [ballKey, setBallKey] = useState(0);
     const [activeMaze, setActiveMaze] = useState<MazeDescriptor>(() => mazeFromPath(requestedPath));
     const [nextMaze, setNextMaze] = useState<MazeDescriptor | null>(null);
     const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>('idle');
     const [transitionTarget, setTransitionTarget] = useState<[number, number, number] | null>(null);
     const [nextMazeOffset, setNextMazeOffset] = useState<[number, number]>([0, 0]);
+    const ballRef = useRef<RapierRigidBody | null>(null);
 
     const controlsEnabled = isReady && !isFailed && transitionPhase === 'idle';
     const ballSpawnPosition = useMemo(() => getStartPosition(activeMaze.map), [activeMaze.map]);
@@ -436,8 +504,6 @@ export function GameScene({
       }
 
       const targetStartLocal = getStartPosition(destination.map, 0);
-      
-      // Calculate offset to align the next maze's start with current ball position
       const offsetX = entryPosition[0] - targetStartLocal[0];
       const offsetZ = entryPosition[2] - targetStartLocal[2];
       
@@ -446,6 +512,14 @@ export function GameScene({
       setTransitionTarget([entryPosition[0], -DROP_DISTANCE + 0.5, entryPosition[2]]);
       setTransitionPhase('falling');
     }, [activeMaze.path, transitionPhase, isFailed]);
+
+    const portalEnterRef = useRef(handlePortalEnter);
+    const failRef = useRef(handleFail);
+    useEffect(() => { portalEnterRef.current = handlePortalEnter; }, [handlePortalEnter]);
+    useEffect(() => { failRef.current = handleFail; }, [handleFail]);
+
+    const stablePortalEnter = useCallback((id: string, pos: [number, number, number]) => portalEnterRef.current(id, pos), []);
+    const stableFail = useCallback((pos: [number, number, number]) => failRef.current(pos), []);
 
     const handleEnterHandoff = useCallback(() => {
       setTransitionPhase('handoff');
@@ -458,7 +532,6 @@ export function GameScene({
       setTransitionTarget(null);
       setTransitionPhase('idle');
       setIsFailed(false);
-      setBallKey((prev) => prev + 1);
       onPathChange(nextMaze.path);
     }, [nextMaze, onPathChange]);
 
@@ -486,15 +559,15 @@ export function GameScene({
                 transitionPhase={transitionPhase}
                 transitionTarget={transitionTarget}
                 ballSpawnPosition={ballSpawnPosition}
-                ballKey={ballKey}
                 isReady={isReady}
                 controlsEnabled={controlsEnabled}
                 isFailed={isFailed}
-                onPortalEnter={handlePortalEnter}
-                onFail={handleFail}
+                onPortalEnter={stablePortalEnter}
+                onFail={stableFail}
                 onEnterHandoff={handleEnterHandoff}
                 onCompleteTransition={handleCompleteTransition}
                 nextMazeOffset={nextMazeOffset}
+                ballRef={ballRef}
               />
           </Canvas>
         </div>

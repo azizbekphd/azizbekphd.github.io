@@ -15,7 +15,7 @@ export const Ball = forwardRef<RapierRigidBody, { position: [number, number, num
         angularDamping={0.1}
         canSleep={false}
       >
-        <mesh castShadow receiveShadow>
+        <mesh castShadow receiveShadow userData={{ skipOpacity: true }}>
           <sphereGeometry args={[0.3, 32, 32]} />
           <meshStandardMaterial color="#eeeeee" metalness={0.9} roughness={0.2} />
         </mesh>
