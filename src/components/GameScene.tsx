@@ -44,7 +44,7 @@ function mazeFromPath(path: string): MazeDescriptor {
     return {
       id: 'endless',
       path: `/endless/${seed}`,
-      map: generateMaze(seed, 15),
+      map: generateMaze(seed),
     };
   }
 
@@ -57,7 +57,7 @@ function mazeFromDestination(destinationId: string): MazeDescriptor {
     return {
       id: 'endless',
       path: `/endless/${seed}`,
-      map: generateMaze(seed, 15),
+      map: generateMaze(seed),
     };
   }
 
@@ -211,7 +211,7 @@ function SceneContent({
         nextMaterialsRef.current = [];
         setIsNextMazeVisible(false);
     }
-  }, [nextMaze?.id, collectMaterials, updateOpacity]);
+  }, [nextMaze, collectMaterials, updateOpacity]);
 
   // Synchronize ball and camera teleportation with maze swap to prevent jiggles and tunneling
   useLayoutEffect(() => {
@@ -497,7 +497,7 @@ export function GameScene({
         destination = {
           id: 'endless',
           path: `/endless/${seed}`,
-          map: generateMaze(seed, 15),
+          map: generateMaze(seed),
         };
       } else {
         destination = mazeFromDestination(destinationId);

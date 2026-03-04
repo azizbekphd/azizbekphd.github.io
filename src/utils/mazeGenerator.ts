@@ -10,7 +10,7 @@ class SquirrelRandom {
   }
 }
 
-export function generateMaze(seedStr: string, size = 15): number[][] {
+export function generateMaze(seedStr: string, size = 20): number[][] {
   let seedNum = 0;
   for (let i = 0; i < seedStr.length; i++) {
     seedNum = (seedNum << 5) - seedNum + seedStr.charCodeAt(i);
@@ -82,8 +82,8 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
   const pathSet = new Set(pathList.map(p => `${p[0]},${p[1]}`));
 
   // Place traps (6) on the main path - perfectly distributed by percentage
-  if (pathList.length > 12) {
-    const targetTraps = 6;
+  if (pathList.length > 30) {
+    const targetTraps = 20;
     const distributionPoints: number[] = [];
     const step = 1 / targetTraps;
     let lastValue = 0;
@@ -93,7 +93,7 @@ export function generateMaze(seedStr: string, size = 15): number[][] {
     }
     
     distributionPoints.forEach(percent => {
-      const index = Math.floor(pathList.length * percent);
+      const index = Math.floor(pathList.length * percent) - 1;
       const [tx, tz] = pathList[index];
       // Only place on empty floor
       if (maze[tz][tx] === 0) {
