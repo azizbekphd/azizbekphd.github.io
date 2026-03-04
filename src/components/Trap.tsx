@@ -19,10 +19,10 @@ const TrapVisuals = memo(({
     borderMatRef, 
     floorShape 
 }: { 
-    doorRef: React.RefObject<THREE.Mesh>, 
-    doorMatRef: React.RefObject<THREE.MeshStandardMaterial>, 
-    borderRef: React.RefObject<THREE.Mesh>, 
-    borderMatRef: React.RefObject<THREE.MeshBasicMaterial>, 
+    doorRef: React.RefObject<THREE.Mesh | null>, 
+    doorMatRef: React.RefObject<THREE.MeshStandardMaterial | null>, 
+    borderRef: React.RefObject<THREE.Mesh | null>, 
+    borderMatRef: React.RefObject<THREE.MeshBasicMaterial | null>, 
     floorShape: THREE.Shape 
 }) => {
   return (
@@ -66,10 +66,10 @@ export const Trap = memo(function Trap({ position, onFail, slideDirection = { x:
   const progressRef = useRef(0);
   const ballInRangeRef = useRef<RapierRigidBody | null>(null);
   
-  const doorRef = useRef<THREE.Mesh>(null);
-  const doorMatRef = useRef<THREE.MeshStandardMaterial>(null);
-  const borderRef = useRef<THREE.Mesh>(null);
-  const borderMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const doorRef = useRef<THREE.Mesh | null>(null);
+  const doorMatRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const borderRef = useRef<THREE.Mesh | null>(null);
+  const borderMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
 
   const floorShape = useMemo(() => {
     const shape = new THREE.Shape();
