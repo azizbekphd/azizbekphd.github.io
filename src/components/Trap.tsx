@@ -1,5 +1,5 @@
 import { RigidBody, CylinderCollider, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
-import { useState, useEffect, useMemo, useRef, memo } from 'react';
+import { useState, useMemo, useRef, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -85,16 +85,11 @@ export const Trap = memo(function Trap({ position, onFail, slideDirection = { x:
     return shape;
   }, []);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      isOpenRef.current = !isOpenRef.current;
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useFrame((_state, delta) => {
+  useFrame((state, delta) => {
     const speed = 4.0;
-    const isOpen = isOpenRef.current;
+    const cycleTime = 8;
+    const isOpen = (state.clock.elapsedTime % cycleTime) >= 4;
+    isOpenRef.current = isOpen;
     
     if (isOpen && progressRef.current < 1) {
       progressRef.current = Math.min(1, progressRef.current + delta * speed);
