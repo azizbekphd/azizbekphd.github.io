@@ -119,9 +119,9 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
         } else if (cell >= 2 && cell <= 5) {
           const portalByCell: Record<string, Record<number, string>> = {
             home: { 2: "projects", 3: "skills", 4: "contact", 5: "endless" },
-            projects: { 2: "home", 3: "contact" },
-            skills: { 2: "home", 4: "contact", 5: "endless" },
-            contact: { 2: "home", 3: "skills", 5: "endless" },
+            projects: { 2: "home" },
+            skills: { 2: "home" },
+            contact: { 2: "home" },
             endless: { 2: "home", 5: "endless" },
             retry: { 2: "retry_action", 5: "home" },
           };
