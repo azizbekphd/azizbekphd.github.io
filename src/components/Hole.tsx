@@ -92,7 +92,7 @@ export const Hole = memo(function Hole({ position, destinationId, onEnter, label
       <RigidBody type="fixed" colliders={false}>
         {/* Entrance Sensor */}
         <CylinderCollider 
-          args={[0.5, 0.2]} 
+          args={[0.5, 0.5]} 
           position={[0, -0.5, 0]} 
           sensor 
           onIntersectionEnter={({ other }) => {

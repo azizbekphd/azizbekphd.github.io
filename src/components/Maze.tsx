@@ -4,9 +4,11 @@ import { Trap } from './Trap';
 import { useMemo, useRef, useLayoutEffect, memo } from 'react';
 import type { ReactElement } from 'react';
 import * as THREE from 'three';
+import { getTileType, isWall, isFloor, isStart } from '../types';
+import type { LevelMap } from '../types';
 
 interface MazeProps {
-  map: number[][];
+  map: LevelMap;
   mazeId: string;
   onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   onFail?: (entryPosition: [number, number, number]) => void;
@@ -14,16 +16,6 @@ interface MazeProps {
 
 const CELL_SIZE = 1;
 const WALL_HEIGHT = 1.0;
-
-const PORTAL_COLORS: Record<string, string> = {
-    PROJECTS: "#00ccff",
-    SKILLS: "#ff00ff",
-    CONTACT: "#ffff00",
-    ENDLESS: "#00ff88",
-    NEXT: "#00ff88",
-    HOME: "#ffffff",
-    RETRY: "#ff4400"
-};
 
 export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = () => {} }: MazeProps) {
   const wallMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -40,23 +32,32 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
       row.forEach((cell, x) => {
         const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
         const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
-        if (cell === 1) wallV.push([cx, WALL_HEIGHT / 2, cz]);
-        else if (cell === 0 || cell === 9) floorV.push([cx, -0.05, cz]);
+        
+        if (isWall(cell)) {
+          wallV.push([cx, WALL_HEIGHT / 2, cz]);
+        } else if (isFloor(cell)) {
+          // Check if it's a "simple" floor or start (needs explicit floor mesh)
+          // Interactive tiles like Hole and Trap might handle their own floor visual
+          const type = getTileType(cell);
+          if (type === 'floor' || type === 'start') {
+            floorV.push([cx, -0.05, cz]);
+          }
+        }
       });
     });
 
-    const getMergedColliders = (types: number[]) => {
+    const getMergedColliders = (isTargetType: (cell: any) => boolean) => {
       const colliders: { pos: [number, number, number]; args: [number, number, number] }[] = [];
       const visited = Array(height).fill(0).map(() => Array(width).fill(false));
       for (let z = 0; z < height; z++) {
         for (let x = 0; x < width; x++) {
-          if (types.includes(map[z][x]) && !visited[z][x]) {
+          if (isTargetType(map[z][x]) && !visited[z][x]) {
             let w = 1;
-            while (x + w < width && types.includes(map[z][x + w]) && !visited[z][x + w]) w++;
+            while (x + w < width && isTargetType(map[z][x + w]) && !visited[z][x + w]) w++;
             let h = 1;
             while (z + h < height) {
               let possible = true;
-              for (let i = 0; i < w; i++) if (!types.includes(map[z + h][x + i]) || visited[z + h][x + i]) { possible = false; break; }
+              for (let i = 0; i < w; i++) if (!isTargetType(map[z + h][x + i]) || visited[z + h][x + i]) { possible = false; break; }
               if (possible) h++; else break;
             }
             for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) visited[z + i][x + j] = true;
@@ -71,8 +72,12 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
       return colliders;
     };
 
-    const wallCollidersData = getMergedColliders([1]);
-    const floorCollidersData = getMergedColliders([0, 9]);
+    const wallCollidersData = getMergedColliders(isWall);
+    // Everything that's not a wall has a floor collider, but Hole and Trap manage their own complex physics
+    const floorCollidersData = getMergedColliders((cell) => {
+        const type = getTileType(cell);
+        return type === 'floor' || type === 'start';
+    });
 
     const colliders = (
       <>
@@ -95,8 +100,9 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
       row.forEach((cell, x) => {
         const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
         const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
+        const type = getTileType(cell);
 
-        if (cell === 6) {
+        if (type === 'trap') {
           // Find closest wall for sliding direction
           const neighbors = [
             { dx: 0, dz: -1 }, // North
@@ -109,44 +115,23 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
             const nx = x + dx;
             const nz = z + dz;
             if (nz >= 0 && nz < map.length && nx >= 0 && nx < map[0].length) {
-              if (map[nz][nx] === 1) {
+              if (isWall(map[nz][nx])) {
                 slideDir = { x: dx, z: dz };
                 break;
               }
             }
           }
           traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} slideDirection={slideDir} />);
-        } else if (cell >= 2 && cell <= 5) {
-          const portalByCell: Record<string, Record<number, string>> = {
-            home: { 2: "projects", 3: "skills", 4: "contact", 5: "endless" },
-            projects: { 2: "home" },
-            skills: { 2: "home" },
-            contact: { 2: "home" },
-            endless: { 2: "home", 5: "endless" },
-            retry: { 2: "retry_action", 5: "home" },
-          };
-
-          const labelByDestination: Record<string, string> = {
-            projects: "PROJECTS",
-            skills: "SKILLS",
-            contact: "CONTACT",
-            endless: mazeId === "endless" ? "NEXT" : "ENDLESS",
-            home: "HOME",
-            retry_action: "RETRY",
-          };
-
-          const destinationId = portalByCell[mazeId]?.[cell];
-          if (!destinationId) return;
-          const label = labelByDestination[destinationId] ?? "PORTAL";
-          
+        } else if (type === 'portal') {
+          const portal = cell as any;
           holes.push(
             <Hole 
                 key={`h-${x}-${z}`} 
                 position={[cx, 0, cz]} 
-                destinationId={destinationId} 
+                destinationId={portal.destination} 
                 onEnter={onPortalEnter} 
-                label={label} 
-                color={PORTAL_COLORS[label] || "#ffffff"}
+                label={portal.label} 
+                color={portal.color}
             />
           );
         }
@@ -154,7 +139,7 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
     });
 
     return { wallVisuals: wallV, floorVisuals: floorV, collidersJSX: colliders, holesJSX: holes, trapsJSX: traps };
-  }, [map, width, height, mazeId, onPortalEnter, onFail]);
+  }, [map, width, height, onPortalEnter, onFail]);
 
   useLayoutEffect(() => {
     const temp = new THREE.Object3D();
@@ -212,4 +197,3 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
     </group>
   );
 });
-

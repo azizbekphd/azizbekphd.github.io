@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing';
 import { levelHome, levelProjects, levelSkills, levelContact, levelRetry } from '../levels';
 import { generateMaze } from '../utils/mazeGenerator';
+import { isStart } from '../types';
+import type { MazeDescriptor, LevelMap } from '../types';
 
 /* eslint-disable react-hooks/immutability */
 
@@ -18,12 +20,6 @@ const CAMERA_HEIGHT = 20;
 type MazeId = 'home' | 'projects' | 'skills' | 'contact' | 'endless' | 'retry';
 type TransitionPhase = 'idle' | 'falling' | 'handoff';
 
-interface MazeDescriptor {
-  id: MazeId;
-  path: string;
-  map: number[][];
-}
-
 function randomSeed() {
   return Math.random().toString(36).substring(7);
 }
@@ -32,6 +28,15 @@ function mazeFromPath(path: string): MazeDescriptor {
   if (path === '/projects') return { id: 'projects', path, map: levelProjects };
   if (path === '/skills') return { id: 'skills', path, map: levelSkills };
   if (path === '/contact') return { id: 'contact', path, map: levelContact };
+
+  if (path === '/endless') {
+    const seed = randomSeed();
+    return {
+      id: 'endless',
+      path: `/endless/${seed}`,
+      map: generateMaze(seed),
+    };
+  }
 
   const retryMatch = path.match(/^\/endless\/([^/]+)\/retry$/);
   if (retryMatch) {
@@ -51,26 +56,12 @@ function mazeFromPath(path: string): MazeDescriptor {
   return { id: 'home', path: '/', map: levelHome };
 }
 
-function mazeFromDestination(destinationId: string): MazeDescriptor {
-  if (destinationId === 'endless') {
-    const seed = randomSeed();
-    return {
-      id: 'endless',
-      path: `/endless/${seed}`,
-      map: generateMaze(seed),
-    };
-  }
-
-  const normalized = destinationId === 'home' ? '/' : `/${destinationId}`;
-  return mazeFromPath(normalized);
-}
-
-function getStartPosition(map: number[][], yOffset = 0): [number, number, number] {
+function getStartPosition(map: LevelMap, yOffset = 0): [number, number, number] {
   const width = map[0].length;
   const height = map.length;
   for (let z = 0; z < height; z++) {
     for (let x = 0; x < width; x++) {
-      if (map[z][x] === 9) {
+      if (isStart(map[z][x])) {
         return [(x - width / 2) + 0.5, yOffset + 0.5, (z - height / 2) + 0.5];
       }
     }
@@ -491,16 +482,19 @@ export function GameScene({
       if (transitionPhase !== 'idle' || isFailed) return;
 
       let destination: MazeDescriptor;
-      if (destinationId === 'retry_action') {
-        const match = activeMaze.path.match(/^\/endless\/([^/]+)/);
-        const seed = match ? match[1] : randomSeed();
+      if (destinationId === 'endless') {
+        const seed = randomSeed();
         destination = {
           id: 'endless',
           path: `/endless/${seed}`,
           map: generateMaze(seed),
         };
+      } else if (destinationId === 'endless/retry') {
+        const seed = activeMaze.path.split('/')[2];
+        destination = mazeFromPath(`/endless/${seed}`);
       } else {
-        destination = mazeFromDestination(destinationId);
+        const normalizedPath = destinationId === 'home' ? '/' : `/${destinationId}`;
+        destination = mazeFromPath(normalizedPath);
       }
 
       const targetStartLocal = getStartPosition(destination.map, 0);
@@ -511,7 +505,7 @@ export function GameScene({
       setNextMazeOffset([offsetX, offsetZ]);
       setTransitionTarget([entryPosition[0], -DROP_DISTANCE + 0.5, entryPosition[2]]);
       setTransitionPhase('falling');
-    }, [activeMaze.path, transitionPhase, isFailed]);
+    }, [transitionPhase, isFailed]);
 
     const portalEnterRef = useRef(handlePortalEnter);
     const failRef = useRef(handleFail);

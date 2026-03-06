@@ -1,65 +1,79 @@
-export const levelHome = [
-  [1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1],
-  [1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
-  [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1],
-  [3, 0, 1, 0, 0, 9, 0, 0, 1, 0, 4],
-  [1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1],
-  [1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1],
-  [1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 5, 1, 1, 1, 1, 1],
+import type { Tile, PortalTile } from './types';
+
+const FLOOR = 0;
+const WALL = 1;
+const START = 9;
+const TRAP = 6;
+
+const p = (destination: string, label: string, color?: string): PortalTile => ({
+  type: 'portal',
+  destination,
+  label,
+  color,
+});
+
+export const levelHome: Tile[][] = [
+  [WALL, WALL, WALL, WALL, WALL, p('projects', 'PROJECTS', '#00ccff'), WALL, WALL, WALL, WALL, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, FLOOR, WALL, WALL, FLOOR, WALL, FLOOR, WALL, WALL, FLOOR, WALL],
+  [WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, WALL],
+  [p('skills', 'SKILLS', '#ff00ff'), FLOOR, WALL, FLOOR, FLOOR, START, FLOOR, FLOOR, WALL, FLOOR, p('contact', 'CONTACT', '#ffff00')],
+  [WALL, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL],
+  [WALL, FLOOR, WALL, WALL, FLOOR, WALL, FLOOR, WALL, WALL, FLOOR, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, WALL, WALL, WALL, WALL, p('endless', 'ENDLESS', '#00ff88'), WALL, WALL, WALL, WALL, WALL],
 ];
 
-export const levelProjects = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 9, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-  [1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-  [1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+export const levelProjects: Tile[][] = [
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, START, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, WALL],
+  [WALL, WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, WALL],
+  [WALL, WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, p('home', 'HOME', '#ffffff'), WALL, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];
 
-export const levelSkills = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 9, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 2, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+export const levelSkills: Tile[][] = [
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, START, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, p('home', 'HOME', '#ffffff'), WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];
 
-export const levelContact = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-  [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
-  [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-  [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
-  [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+export const levelContact: Tile[][] = [
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, WALL, START, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL],
+  [WALL, WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL, WALL, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, WALL, WALL],
+  [WALL, WALL, WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL],
+  [WALL, WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
+  [WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL, WALL, WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, WALL, WALL],
+  [WALL, WALL, WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, p('home', 'HOME', '#ffffff'), WALL, WALL, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];
 
-export const levelRetry = [
-  [1, 1, 1, 1, 1],
-  [1, 5, 1, 2, 1],
-  [1, 0, 9, 0, 1],
-  [1, 1, 1, 1, 1],
+export const levelRetry: Tile[][] = [
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL],
+  [WALL, p('endless/retry', 'RETRY', '#ff4444'), WALL, FLOOR, WALL, p('home', 'HOME', '#ffffff'), WALL],
+  [WALL, FLOOR, FLOOR, START, FLOOR, FLOOR, WALL],
+  [WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];

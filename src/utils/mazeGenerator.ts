@@ -1,3 +1,5 @@
+import type { Tile, LevelMap, PortalTile } from '../types';
+
 // Simple seeded random number generator
 class SquirrelRandom {
   private seed: number;
@@ -10,7 +12,19 @@ class SquirrelRandom {
   }
 }
 
-export function generateMaze(seedStr: string, size = 21): number[][] {
+const FLOOR = 0;
+const WALL = 1;
+const START = 9;
+const TRAP = 6;
+
+const p = (destination: string, label: string, color?: string): PortalTile => ({
+  type: 'portal',
+  destination,
+  label,
+  color,
+});
+
+export function generateMaze(seedStr: string, size = 21): LevelMap {
   let seedNum = 0;
   for (let i = 0; i < seedStr.length; i++) {
     seedNum = (seedNum << 5) - seedNum + seedStr.charCodeAt(i);
@@ -18,11 +32,11 @@ export function generateMaze(seedStr: string, size = 21): number[][] {
   }
   const rng = new SquirrelRandom(Math.abs(seedNum) || 1);
 
-  const maze: number[][] = Array(size).fill(0).map(() => Array(size).fill(1));
+  const maze: LevelMap = Array(size).fill(0).map(() => Array(size).fill(WALL));
   const stack: [number, number][] = [];
   const startX = 1;
   const startZ = 1;
-  maze[startZ][startX] = 0;
+  maze[startZ][startX] = FLOOR;
   stack.push([startX, startZ]);
 
   while (stack.length > 0) {
@@ -31,28 +45,28 @@ export function generateMaze(seedStr: string, size = 21): number[][] {
     [[0, -2], [0, 2], [-2, 0], [2, 0]].forEach(([dx, dz]) => {
       const nx = currX + dx;
       const nz = currZ + dz;
-      if (nx > 0 && nx < size - 1 && nz > 0 && nz < size - 1 && maze[nz][nx] === 1) {
+      if (nx > 0 && nx < size - 1 && nz > 0 && nz < size - 1 && maze[nz][nx] === WALL) {
         neighbors.push([nx, nz, dx, dz]);
       }
     });
     if (neighbors.length > 0) {
       const idx = Math.floor(rng.next() * neighbors.length);
       const [nx, nz, dx, dz] = neighbors[idx];
-      maze[nz][nx] = 0;
-      maze[currZ + dz / 2][currX + dx / 2] = 0; 
+      maze[nz][nx] = FLOOR;
+      maze[currZ + dz / 2][currX + dx / 2] = FLOOR; 
       stack.push([nx, nz]);
     } else {
       stack.pop();
     }
   }
 
-  maze[1][1] = 9;
+  maze[1][1] = START;
 
   let nextPos: [number, number] | null = null;
   for (let z = size - 2; z > size / 2 && !nextPos; z--) {
     for (let x = size - 2; x > size / 2 && !nextPos; x--) {
-      if (maze[z][x] === 0) {
-        maze[z][x] = 5;
+      if (maze[z][x] === FLOOR) {
+        maze[z][x] = p('endless', 'NEXT', '#00ff88');
         nextPos = [x, z];
       }
     }
@@ -68,7 +82,8 @@ export function generateMaze(seedStr: string, size = 21): number[][] {
           for (const [dx, dz] of directions) {
               const nx = cx + dx;
               const nz = cz + dz;
-              if (nx >= 0 && nx < size && nz >= 0 && nz < size && maze[nz][nx] !== 1 && !visited.has(`${nx},${nz}`)) {
+              const cell = maze[nz][nx];
+              if (nx >= 0 && nx < size && nz >= 0 && nz < size && cell !== WALL && !visited.has(`${nx},${nz}`)) {
                   const res = findPath(nx, nz, targetX, targetZ, visited);
                   if (res) return [[cx, cz], ...res];
               }
@@ -81,7 +96,7 @@ export function generateMaze(seedStr: string, size = 21): number[][] {
 
   const pathSet = new Set(pathList.map(p => `${p[0]},${p[1]}`));
 
-  // Place traps (6) on the main path - perfectly distributed by percentage
+  // Place traps (6) on the main path
   if (pathList.length > 30) {
     const targetTraps = 20;
     const distributionPoints: number[] = [];
@@ -95,9 +110,8 @@ export function generateMaze(seedStr: string, size = 21): number[][] {
     distributionPoints.forEach(percent => {
       const index = Math.floor(pathList.length * percent) - 1;
       const [tx, tz] = pathList[index];
-      // Only place on empty floor
-      if (maze[tz][tx] === 0) {
-        maze[tz][tx] = 6;
+      if (maze[tz][tx] === FLOOR) {
+        maze[tz][tx] = TRAP;
       }
     });
   }
@@ -106,8 +120,8 @@ export function generateMaze(seedStr: string, size = 21): number[][] {
   let placedHome = false;
   for (let z = 1; z < size - 1 && !placedHome; z++) {
     for (let x = size - 2; x > 1 && !placedHome; x--) {
-      if (maze[z][x] === 0 && maze[z][x] !== 9 && maze[z][x] !== 5 && maze[z][x] !== 6 && !pathSet.has(`${x},${z}`)) {
-        maze[z][x] = 2;
+      if (maze[z][x] === FLOOR && !pathSet.has(`${x},${z}`)) {
+        maze[z][x] = p('home', 'HOME', '#ffffff');
         placedHome = true;
       }
     }
