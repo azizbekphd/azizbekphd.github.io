@@ -28,24 +28,23 @@ const HoleVisuals = memo(function HoleVisuals({
   label?: string;
   color: string;
 }) {
-  const floorGeom = useMemo(() => new THREE.ShapeGeometry(floorShape), [floorShape]);
-  const holeGeom = useMemo(() => new THREE.CylinderGeometry(0.4, 0.4, 1, 32), []);
-  const ringGeom = useMemo(() => new THREE.RingGeometry(0.38, 0.45, 32), []);
-
   return (
     <>
       {/* Surrounding Floor Tile with Hole */}
-      <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow geometry={floorGeom}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow>
+        <shapeGeometry args={[floorShape]} />
         <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} transparent />
       </mesh>
 
       {/* Deep Hole Visual */}
-      <mesh position={[0, -0.5, 0]} receiveShadow geometry={holeGeom}>
+      <mesh position={[0, -0.5, 0]} receiveShadow>
+        <cylinderGeometry args={[0.4, 0.4, 1, 32]} />
         <meshStandardMaterial color="#000000" roughness={1} transparent />
       </mesh>
 
       {/* Glowing Ring Rim */}
-      <mesh position={[0, 0.01, 0]} rotation-x={-Math.PI / 2} geometry={ringGeom}>
+      <mesh position={[0, 0.01, 0]} rotation-x={-Math.PI / 2}>
+        <ringGeometry args={[0.38, 0.45, 32]} />
         <meshBasicMaterial color={color} toneMapped={false} transparent />
       </mesh>
 

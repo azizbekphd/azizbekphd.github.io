@@ -32,22 +32,20 @@ const TrapVisuals = memo(({
     borderMatRef: React.RefObject<THREE.MeshBasicMaterial | null>, 
     floorShape: THREE.Shape 
 }) => {
-  const floorGeom = useMemo(() => new THREE.ShapeGeometry(floorShape), [floorShape]);
-  const holeGeom = useMemo(() => new THREE.CylinderGeometry(0.48, 0.48, 1, 32), []);
-  const doorGeom = useMemo(() => new THREE.CylinderGeometry(0.44, 0.44, 0.05, 32), []);
-  const ringGeom = useMemo(() => new THREE.RingGeometry(0.44, 0.52, 32), []);
-
   return (
     <>
-      <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow geometry={floorGeom}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow>
+        <shapeGeometry args={[floorShape]} />
         <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} transparent />
       </mesh>
 
-      <mesh position={[0, -0.6, 0]} receiveShadow geometry={holeGeom}>
+      <mesh position={[0, -0.6, 0]} receiveShadow>
+        <cylinderGeometry args={[0.48, 0.48, 1, 32]} />
         <meshStandardMaterial color="#000000" roughness={1} transparent />
       </mesh>
 
-      <mesh ref={doorRef} position={[0, -0.05, 0]} castShadow receiveShadow geometry={doorGeom}>
+      <mesh ref={doorRef} position={[0, -0.05, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.44, 0.44, 0.05, 32]} />
         <meshStandardMaterial 
           ref={doorMatRef}
           color="#ffffff" 
@@ -58,7 +56,8 @@ const TrapVisuals = memo(({
         />
       </mesh>
 
-      <mesh ref={borderRef} position={[0, 0.01, 0]} rotation-x={-Math.PI / 2} geometry={ringGeom}>
+      <mesh ref={borderRef} position={[0, 0.01, 0]} rotation-x={-Math.PI / 2}>
+        <ringGeometry args={[0.44, 0.52, 32]} />
         <meshBasicMaterial ref={borderMatRef} color={NEON_BLUE} toneMapped={false} transparent userData={{ localOpacity: 1 }} />
       </mesh>
     </>
