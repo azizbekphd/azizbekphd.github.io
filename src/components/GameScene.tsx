@@ -27,6 +27,33 @@ const SHADOW_MAP_TRANSITION: [number, number] = [1024, 1024];
 const NOOP_PORTAL_ENTER = (_destinationId: string, _entryPosition: [number, number, number]) => {};
 const NOOP_FAIL = (_entryPosition: [number, number, number]) => {};
 
+/** Runs after Rapier's useFrame (registered last under Physics) so camera matches interpolated mesh. */
+function BallCameraFollow({
+  ballRef,
+  activeBoardRef,
+  camera,
+  lookTargetRef,
+  lightRef,
+}: {
+  ballRef: MutableRefObject<RapierRigidBody | null>;
+  activeBoardRef: MutableRefObject<THREE.Group | null>;
+  camera: THREE.Camera;
+  lookTargetRef: MutableRefObject<THREE.Vector3>;
+  lightRef: MutableRefObject<THREE.DirectionalLight | null>;
+}) {
+  useFrame(() => {
+    const ballObject = activeBoardRef.current?.getObjectByName('ball') ?? null;
+    syncCameraAndLight({
+      ball: ballRef.current,
+      ballObject,
+      camera,
+      lookTarget: lookTargetRef.current,
+      light: lightRef.current,
+    });
+  });
+  return null;
+}
+
 type TransitionPhase = 'idle' | 'falling' | 'handoff';
 type MaterialOpacityData = { globalOpacity?: number; localOpacity?: number };
 type TextOpacityNode = THREE.Object3D & { fillOpacity?: number; isText?: boolean; material?: THREE.Material };
@@ -276,13 +303,6 @@ function SceneContent({
       }
     }
 
-    syncCameraAndLight({
-      ball: ballRef.current,
-      camera,
-      lookTarget: lookTarget.current,
-      light: lightRef.current,
-    });
-
     if (nextMaze && isPerfEnabled()) {
       const stats = renderStatsRef.current;
       const frameMs = delta * 1000;
@@ -372,6 +392,13 @@ function SceneContent({
             </group>
           )}
          </Suspense>
+        <BallCameraFollow
+          ballRef={ballRef}
+          activeBoardRef={activeBoardRef}
+          camera={camera}
+          lookTargetRef={lookTarget}
+          lightRef={lightRef}
+        />
        </Physics>
 
        <EffectComposer enableNormalPass={false} multisampling={inTransition ? 0 : 8}>

@@ -4,6 +4,9 @@ import * as THREE from 'three';
 const CAMERA_HEIGHT = 20;
 const OPACITY_EPSILON = 0.01;
 
+/** Reused for camera follow so it matches the interpolated RigidBody mesh transform. */
+const _ballWorldPos = new THREE.Vector3();
+
 export function updateActiveBoardTilt(params: {
   activeBoard: THREE.Group | null;
   controlsEnabled: boolean;
@@ -131,24 +134,34 @@ export function updateTransitionState(params: {
 
 export function syncCameraAndLight(params: {
   ball: RapierRigidBody | null;
+  /** Same Object3D Rapier drives each frame (interpolated); avoids jitter vs `ball.translation()`. */
+  ballObject: THREE.Object3D | null;
   camera: THREE.Camera;
   lookTarget: THREE.Vector3;
   light: THREE.DirectionalLight | null;
 }): void {
-  const { ball, camera, lookTarget, light } = params;
-  if (!ball) return;
+  const { ball, ballObject, camera, lookTarget, light } = params;
+  if (!ball && !ballObject) return;
 
-  const cameraTarget = ball.translation();
-  camera.position.x = cameraTarget.x;
-  camera.position.y = cameraTarget.y + CAMERA_HEIGHT;
-  camera.position.z = cameraTarget.z;
+  if (ballObject) {
+    ballObject.getWorldPosition(_ballWorldPos);
+  } else if (ball) {
+    const t = ball.translation();
+    _ballWorldPos.set(t.x, t.y, t.z);
+  } else {
+    return;
+  }
 
-  lookTarget.set(cameraTarget.x, cameraTarget.y, cameraTarget.z);
+  camera.position.x = _ballWorldPos.x;
+  camera.position.y = _ballWorldPos.y + CAMERA_HEIGHT;
+  camera.position.z = _ballWorldPos.z;
+
+  lookTarget.copy(_ballWorldPos);
   camera.lookAt(lookTarget);
 
   if (light) {
-    light.position.set(cameraTarget.x + 15, cameraTarget.y + 25, cameraTarget.z + 15);
-    light.target.position.set(cameraTarget.x, cameraTarget.y, cameraTarget.z);
+    light.position.set(_ballWorldPos.x + 15, _ballWorldPos.y + 25, _ballWorldPos.z + 15);
+    light.target.position.copy(_ballWorldPos);
     light.target.updateMatrixWorld();
   }
 }
