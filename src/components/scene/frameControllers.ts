@@ -123,7 +123,8 @@ export function updateTransitionState(params: {
   }
 
   const distToTarget = Math.abs(current.y - transitionTarget[1]);
-  const nOpacity = THREE.MathUtils.clamp(1 - distToTarget / 15, 0, 1);
+  const rawNextOpacity = THREE.MathUtils.clamp(1 - distToTarget / 18, 0, 1);
+  const nOpacity = rawNextOpacity * rawNextOpacity * (3 - 2 * rawNextOpacity);
   if (Math.abs(nextOpacity - nOpacity) > OPACITY_EPSILON) {
     onNextOpacityChange(nOpacity);
   }

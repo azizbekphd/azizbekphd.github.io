@@ -1,11 +1,17 @@
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
+import { useFrame } from '@react-three/fiber';
 import { Hole } from './Hole';
 import { Trap } from './Trap';
 import { useMemo, useRef, useLayoutEffect, memo, useCallback } from 'react';
+import type { MutableRefObject } from 'react';
 import * as THREE from 'three';
 import type { LevelMap } from '../types';
 import { buildMazeLayoutData } from '../utils/maze/layout';
 import { markDuration, withPerfMeasure } from '../utils/perf';
+import {
+  applyRadialRevealToInstancedStandardMaterial,
+  syncRadialRevealUniforms,
+} from './mazeRadialRevealMaterial';
 
 interface MazeProps {
   map: LevelMap;
@@ -19,13 +25,20 @@ interface MazeProps {
   includeStaticColliders?: boolean;
   /** When false, walls/traps do not cast shadows (avoids old level shadows on the board below during portal fall). */
   castsStaticShadows?: boolean;
+  /** Landing-centered reveal in maze-local XZ; pair with `revealRadiusRef` for GPU-smooth expansion. */
   revealCenter?: [number, number];
-  revealRadius?: number;
+  /** Current reveal radius (updated every frame from the scene). */
+  revealRadiusRef?: MutableRefObject<number>;
+  /** Edge softness for the radial mask (maze units). */
+  revealSoftness?: number;
 }
 
 const CELL_SIZE = 1;
 const WALL_HEIGHT = 1.0;
 const NOOP_ON_FAIL = () => {};
+/** Holes/traps stay CPU-culled to this radius; instanced walls/floors use a smooth shader mask. */
+const PREVIEW_HOLE_TRAP_RADIUS_SQ = 22 * 22;
+const DEFAULT_REVEAL_SOFTNESS = 3.25;
 
 export const Maze = memo(function Maze({
   map,
@@ -35,34 +48,40 @@ export const Maze = memo(function Maze({
   includeStaticColliders = false,
   castsStaticShadows = true,
   revealCenter,
-  revealRadius,
+  revealRadiusRef,
+  revealSoftness = DEFAULT_REVEAL_SOFTNESS,
 }: MazeProps) {
   const wallMeshRef = useRef<THREE.InstancedMesh>(null);
   const floorMeshRef = useRef<THREE.InstancedMesh>(null);
-  const shouldUseReveal = !isInteractive && revealCenter !== undefined && revealRadius !== undefined;
+  const wallMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const floorMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const revealShaderMode =
+    !isInteractive && revealCenter !== undefined && revealRadiusRef !== undefined;
 
-  const withinRevealRadius = useCallback((x: number, z: number) => {
-    if (!shouldUseReveal || !revealCenter || revealRadius === undefined) return true;
-    const dx = x - revealCenter[0];
-    const dz = z - revealCenter[1];
-    return (dx * dx) + (dz * dz) <= revealRadius * revealRadius;
-  }, [revealCenter, revealRadius, shouldUseReveal]);
+  const withinPreviewHoleTrapRadius = useCallback(
+    (x: number, z: number) => {
+      if (!revealShaderMode || !revealCenter) return true;
+      const dx = x - revealCenter[0];
+      const dz = z - revealCenter[1];
+      return dx * dx + dz * dz <= PREVIEW_HOLE_TRAP_RADIUS_SQ;
+    },
+    [revealCenter, revealShaderMode],
+  );
 
   const { wallVisuals, floorVisuals, collidersJSX, holesJSX, trapsJSX } = useMemo(() => {
-    const layout = withPerfMeasure('maze.component.buildLayoutMemo', () => buildMazeLayoutData(map, CELL_SIZE, WALL_HEIGHT));
+    const layout = withPerfMeasure('maze.component.buildLayoutMemo', () =>
+      buildMazeLayoutData(map, CELL_SIZE, WALL_HEIGHT),
+    );
     const wallCollidersData = layout.wallColliders;
     const floorCollidersData = layout.floorColliders;
-    const filteredWallVisuals = shouldUseReveal
-      ? layout.wallVisuals.filter(([x, _y, z]) => withinRevealRadius(x, z))
-      : layout.wallVisuals;
-    const filteredFloorVisuals = shouldUseReveal
-      ? layout.floorVisuals.filter(([x, _y, z]) => withinRevealRadius(x, z))
-      : layout.floorVisuals;
-    const filteredPortals = shouldUseReveal
-      ? layout.portals.filter(({ position }) => withinRevealRadius(position[0], position[2]))
+
+    const wallV = layout.wallVisuals;
+    const floorV = layout.floorVisuals;
+    const filteredPortals = revealShaderMode
+      ? layout.portals.filter(({ position }) => withinPreviewHoleTrapRadius(position[0], position[2]))
       : layout.portals;
-    const filteredTraps = shouldUseReveal
-      ? layout.traps.filter(({ position }) => withinRevealRadius(position[0], position[2]))
+    const filteredTraps = revealShaderMode
+      ? layout.traps.filter(({ position }) => withinPreviewHoleTrapRadius(position[0], position[2]))
       : layout.traps;
 
     const mountStaticColliders = isInteractive || includeStaticColliders;
@@ -70,7 +89,11 @@ export const Maze = memo(function Maze({
       <>
         <RigidBody type="fixed" friction={0.1} restitution={0.2}>
           {wallCollidersData.map((c, i) => (
-            <CuboidCollider key={`w-${i}`} args={[c.args[0], WALL_HEIGHT / 2, c.args[2]]} position={[c.pos[0], WALL_HEIGHT / 2, c.pos[2]]} />
+            <CuboidCollider
+              key={`w-${i}`}
+              args={[c.args[0], WALL_HEIGHT / 2, c.args[2]]}
+              position={[c.pos[0], WALL_HEIGHT / 2, c.pos[2]]}
+            />
           ))}
         </RigidBody>
         <RigidBody type="fixed" friction={0.1} restitution={0.2}>
@@ -105,13 +128,22 @@ export const Maze = memo(function Maze({
     ));
 
     return {
-      wallVisuals: filteredWallVisuals,
-      floorVisuals: filteredFloorVisuals,
+      wallVisuals: wallV,
+      floorVisuals: floorV,
       collidersJSX: colliders,
       holesJSX: holes,
       trapsJSX: traps,
     };
-  }, [castsStaticShadows, includeStaticColliders, isInteractive, map, onPortalEnter, onFail, shouldUseReveal, withinRevealRadius]);
+  }, [
+    castsStaticShadows,
+    includeStaticColliders,
+    isInteractive,
+    map,
+    onPortalEnter,
+    onFail,
+    revealShaderMode,
+    withinPreviewHoleTrapRadius,
+  ]);
 
   useLayoutEffect(() => {
     const start = performance.now();
@@ -136,6 +168,26 @@ export const Maze = memo(function Maze({
     markDuration('maze.component.updateInstanceMatrices', performance.now() - start);
   }, [wallVisuals, floorVisuals]);
 
+  useLayoutEffect(() => {
+    if (!revealShaderMode || !revealCenter || !revealRadiusRef) return;
+    const w = wallMatRef.current;
+    const f = floorMatRef.current;
+    if (!w || !f) return;
+    const r0 = revealRadiusRef.current;
+    applyRadialRevealToInstancedStandardMaterial(w, revealCenter, r0, revealSoftness);
+    applyRadialRevealToInstancedStandardMaterial(f, revealCenter, r0, revealSoftness);
+  }, [revealShaderMode, revealCenter, revealRadiusRef, revealSoftness, map, wallVisuals.length, floorVisuals.length]);
+
+  useFrame(() => {
+    if (!revealShaderMode || !revealCenter || !revealRadiusRef) return;
+    const w = wallMatRef.current;
+    const f = floorMatRef.current;
+    if (!w || !f) return;
+    const r = revealRadiusRef.current;
+    syncRadialRevealUniforms(w, revealCenter, r);
+    syncRadialRevealUniforms(f, revealCenter, r);
+  });
+
   return (
     <group>
       <instancedMesh
@@ -149,7 +201,13 @@ export const Maze = memo(function Maze({
         receiveShadow
       >
         <boxGeometry args={[CELL_SIZE, WALL_HEIGHT, CELL_SIZE]} />
-        <meshStandardMaterial color="#444444" metalness={0.2} roughness={0.8} transparent />
+        <meshStandardMaterial
+          ref={wallMatRef}
+          color="#444444"
+          metalness={0.2}
+          roughness={0.8}
+          transparent
+        />
       </instancedMesh>
 
       <instancedMesh
@@ -162,7 +220,13 @@ export const Maze = memo(function Maze({
         receiveShadow
       >
         <planeGeometry args={[CELL_SIZE, CELL_SIZE]} />
-        <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} transparent />
+        <meshStandardMaterial
+          ref={floorMatRef}
+          color="#ffffff"
+          metalness={0.1}
+          roughness={0.9}
+          transparent
+        />
       </instancedMesh>
 
       {collidersJSX}

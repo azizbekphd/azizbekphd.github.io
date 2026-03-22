@@ -33,12 +33,9 @@ const FALL_VISUAL_DAMP_UP = 12;
 const FALL_VISUAL_DAMP_DOWN = 4.25;
 /** Consecutive frames in the handoff landing zone before maze swap. */
 const HANDOFF_LANDING_HOLD_FRAMES = 5;
-/**
- * Next-maze reveal uses React state → Maze rebuilds layout when `revealRadius` changes.
- * Quantize to a few steps to avoid ~16 full layout recomputes per transition (major frame drops near landing).
- */
-const REVEAL_RADIUS_LEVELS = 5;
+/** Next-maze radial reveal: min radius and span (GPU shader; no stepped layout rebuilds). */
 const REVEAL_RADIUS_MIN = 2;
+const REVEAL_RADIUS_SPAN = 16;
 const SHADOW_MAP_SIZE: [number, number] = [2048, 2048];
 const NOOP_PORTAL_ENTER = (_destinationId: string, _entryPosition: [number, number, number]) => {};
 const NOOP_FAIL = (_entryPosition: [number, number, number]) => {};
@@ -162,8 +159,7 @@ function SceneContent({
   const activeMaterialsRef = useRef<OpacityItem[]>([]);
   const nextMaterialsRef = useRef<OpacityItem[]>([]);
   const [isNextMazeVisible, setIsNextMazeVisible] = useState(false);
-  const [nextRevealRadius, setNextRevealRadius] = useState(0);
-  const revealRadiusRef = useRef(0);
+  const nextRevealRadiusRef = useRef(REVEAL_RADIUS_MIN);
   const renderStatsRef = useRef({
     elapsed: 0,
     maxDeltaMs: 0,
@@ -222,8 +218,7 @@ function SceneContent({
     if (nextMaze) {
         const start = performance.now();
         setIsNextMazeVisible(false);
-        revealRadiusRef.current = 2;
-        setNextRevealRadius(2);
+        nextRevealRadiusRef.current = REVEAL_RADIUS_MIN;
         // Immediate collection and visibility setup to avoid lag
         if (nextBoardRef.current) {
             nextMaterialsRef.current = collectMaterials(nextBoardRef.current);
@@ -234,8 +229,7 @@ function SceneContent({
     } else {
         nextMaterialsRef.current = [];
         setIsNextMazeVisible(false);
-        revealRadiusRef.current = 0;
-        setNextRevealRadius(0);
+        nextRevealRadiusRef.current = REVEAL_RADIUS_MIN;
     }
   }, [nextMaze, collectMaterials, updateOpacity]);
 
@@ -374,16 +368,7 @@ function SceneContent({
 
     if (nextMaze) {
       const o = nextOpacityRef.current;
-      const level = Math.min(
-        REVEAL_RADIUS_LEVELS - 1,
-        Math.floor(o * REVEAL_RADIUS_LEVELS),
-      );
-      const span = 16;
-      const desiredRadius = REVEAL_RADIUS_MIN + Math.round((level / (REVEAL_RADIUS_LEVELS - 1)) * span);
-      if (desiredRadius !== revealRadiusRef.current) {
-        revealRadiusRef.current = desiredRadius;
-        setNextRevealRadius(desiredRadius);
-      }
+      nextRevealRadiusRef.current = REVEAL_RADIUS_MIN + o * REVEAL_RADIUS_SPAN;
     }
 
     if (nextMaze && isPerfEnabled()) {
@@ -471,7 +456,7 @@ function SceneContent({
                 isInteractive={false}
                 includeStaticColliders
                 revealCenter={nextRevealCenter}
-                revealRadius={nextRevealRadius}
+                revealRadiusRef={nextRevealRadiusRef}
               />
             </group>
           )}
