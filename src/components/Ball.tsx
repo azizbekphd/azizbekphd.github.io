@@ -1,8 +1,18 @@
 import { RigidBody, RapierRigidBody } from '@react-three/rapier';
 import { forwardRef } from 'react';
 
-export const Ball = forwardRef<RapierRigidBody, { position: [number, number, number]; restitution?: number }>(
-  function Ball({ position, restitution = 0.6 }, ref) {
+export const Ball = forwardRef<
+  RapierRigidBody,
+  {
+    position: [number, number, number];
+    restitution?: number;
+    linearDamping?: number;
+    angularDamping?: number;
+  }
+>(function Ball(
+  { position, restitution = 0.6, linearDamping = 0.1, angularDamping = 0.1 },
+  ref,
+) {
     return (
       <RigidBody
         ref={ref}
@@ -11,8 +21,8 @@ export const Ball = forwardRef<RapierRigidBody, { position: [number, number, num
         position={position}
         restitution={restitution}
         friction={0.05}
-        linearDamping={0.1}
-        angularDamping={0.1}
+        linearDamping={linearDamping}
+        angularDamping={angularDamping}
         canSleep={false}
       >
         <mesh castShadow receiveShadow userData={{ skipOpacity: true }}>

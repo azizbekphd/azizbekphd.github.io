@@ -82,11 +82,13 @@ function GravityController({
   isReady,
   controlsEnabled,
   transitionPhase,
+  isMobile,
 }: {
   targetGravity: MutableRefObject<THREE.Vector3>;
   isReady: boolean;
   controlsEnabled: boolean;
   transitionPhase: TransitionPhase;
+  isMobile: boolean;
 }) {
   const { world } = useRapier();
   
@@ -95,7 +97,8 @@ function GravityController({
     if (!controlsEnabled) {
       targetGravity.current.set(0, -30, 0);
     }
-    const lerpFactor = transitionPhase === 'idle' ? 0.15 : 0.1;
+    const lerpFactor =
+      transitionPhase === 'idle' ? (isMobile ? 0.15 : 0.21) : 0.1;
     world.gravity.x = THREE.MathUtils.lerp(world.gravity.x, targetGravity.current.x, lerpFactor);
     world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravity.current.y, lerpFactor);
     world.gravity.z = THREE.MathUtils.lerp(world.gravity.z, targetGravity.current.z, lerpFactor);
@@ -425,6 +428,7 @@ function SceneContent({
           isReady={isReady} 
           controlsEnabled={controlsEnabled && !isFailed} 
           transitionPhase={transitionPhase}
+          isMobile={isMobile}
         />
          <Suspense fallback={null}>
           <group ref={activeBoardRef}>
@@ -440,6 +444,8 @@ function SceneContent({
                 ref={ballRef} 
                 position={ballSpawnPosition} 
                 restitution={transitionPhase === 'idle' ? 0 : (transitionPhase === 'handoff' ? 0 : 0.6)} 
+                linearDamping={isMobile ? 0.1 : 0.055}
+                angularDamping={isMobile ? 0.1 : 0.075}
               />
             )}
            </group>

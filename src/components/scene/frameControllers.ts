@@ -11,6 +11,11 @@ export const DEFAULT_SCENE_CAMERA_FOV = 40;
 const FOV_APPLY_EPSILON = 0.02;
 const OPACITY_EPSILON = 0.01;
 
+/** Pointer-driven maze (tuned between original softness and the first desktop bump). */
+const DESKTOP_BOARD_MAX_TILT_RAD = THREE.MathUtils.degToRad(16);
+const DESKTOP_BOARD_LERP = 0.11;
+const DESKTOP_GRAVITY_HORIZONTAL = 23;
+
 const _cameraUserDataKey = '__mazeTransitionLastFov';
 
 /** Reused for camera follow so it matches the interpolated RigidBody mesh transform. */
@@ -41,10 +46,17 @@ export function updateActiveBoardTilt(params: {
 
   if (controlsEnabled && !isFailed && isReady) {
     if (!isMobile) {
-      const maxTilt = 15 * (Math.PI / 210);
-      activeBoard.rotation.x = THREE.MathUtils.lerp(activeBoard.rotation.x, -pointer.y * maxTilt, 0.05);
-      activeBoard.rotation.z = THREE.MathUtils.lerp(activeBoard.rotation.z, -pointer.x * maxTilt, 0.05);
-      targetGravity.set(pointer.x * 15, -30, -pointer.y * 15);
+      activeBoard.rotation.x = THREE.MathUtils.lerp(
+        activeBoard.rotation.x,
+        -pointer.y * DESKTOP_BOARD_MAX_TILT_RAD,
+        DESKTOP_BOARD_LERP,
+      );
+      activeBoard.rotation.z = THREE.MathUtils.lerp(
+        activeBoard.rotation.z,
+        -pointer.x * DESKTOP_BOARD_MAX_TILT_RAD,
+        DESKTOP_BOARD_LERP,
+      );
+      targetGravity.set(pointer.x * DESKTOP_GRAVITY_HORIZONTAL, -30, -pointer.y * DESKTOP_GRAVITY_HORIZONTAL);
     } else {
       activeBoard.rotation.x = THREE.MathUtils.lerp(activeBoard.rotation.x, mobileRotation.x, 0.1);
       activeBoard.rotation.z = THREE.MathUtils.lerp(activeBoard.rotation.z, mobileRotation.z, 0.1);
