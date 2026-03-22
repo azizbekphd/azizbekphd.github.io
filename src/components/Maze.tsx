@@ -12,6 +12,11 @@ interface MazeProps {
   onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   onFail?: (entryPosition: [number, number, number]) => void;
   isInteractive?: boolean;
+  /**
+   * When `isInteractive` is false (e.g. preview maze during a portal drop), still mount floor/wall
+   * colliders so the ball can land physically instead of falling through visuals only.
+   */
+  includeStaticColliders?: boolean;
   /** When false, walls/traps do not cast shadows (avoids old level shadows on the board below during portal fall). */
   castsStaticShadows?: boolean;
   revealCenter?: [number, number];
@@ -27,6 +32,7 @@ export const Maze = memo(function Maze({
   onPortalEnter,
   onFail = NOOP_ON_FAIL,
   isInteractive = true,
+  includeStaticColliders = false,
   castsStaticShadows = true,
   revealCenter,
   revealRadius,
@@ -59,7 +65,8 @@ export const Maze = memo(function Maze({
       ? layout.traps.filter(({ position }) => withinRevealRadius(position[0], position[2]))
       : layout.traps;
 
-    const colliders = isInteractive ? (
+    const mountStaticColliders = isInteractive || includeStaticColliders;
+    const colliders = mountStaticColliders ? (
       <>
         <RigidBody type="fixed" friction={0.1} restitution={0.2}>
           {wallCollidersData.map((c, i) => (
@@ -104,7 +111,7 @@ export const Maze = memo(function Maze({
       holesJSX: holes,
       trapsJSX: traps,
     };
-  }, [castsStaticShadows, isInteractive, map, onPortalEnter, onFail, shouldUseReveal, withinRevealRadius]);
+  }, [castsStaticShadows, includeStaticColliders, isInteractive, map, onPortalEnter, onFail, shouldUseReveal, withinRevealRadius]);
 
   useLayoutEffect(() => {
     const start = performance.now();

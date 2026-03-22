@@ -448,6 +448,7 @@ function SceneContent({
                 onPortalEnter={NOOP_PORTAL_ENTER}
                 onFail={NOOP_FAIL}
                 isInteractive={false}
+                includeStaticColliders
                 revealCenter={nextRevealCenter}
                 revealRadius={nextRevealRadius}
               />
