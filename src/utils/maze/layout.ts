@@ -51,9 +51,13 @@ function getMergedColliders(
     for (let x = 0; x < width; x++) {
       if (!isTargetType(map[z][x]) || visited[toIndex(x, z)] !== 0) continue;
 
+      // Find max width for this row
       let w = 1;
-      while (x + w < width && isTargetType(map[z][x + w]) && visited[toIndex(x + w, z)] === 0) w++;
+      while (x + w < width && isTargetType(map[z][x + w]) && visited[toIndex(x + w, z)] === 0) {
+        w++;
+      }
 
+      // Find max height for this width
       let h = 1;
       while (z + h < height) {
         let possible = true;
@@ -67,16 +71,21 @@ function getMergedColliders(
         h++;
       }
 
+      // Mark as visited
       for (let i = 0; i < h; i++) {
+        const rowOffset = (z + i) * width;
         for (let j = 0; j < w; j++) {
-          visited[toIndex(x + j, z + i)] = 1;
+          visited[rowOffset + x + j] = 1;
         }
       }
 
       const midX = x + (w - 1) / 2;
       const midZ = z + (h - 1) / 2;
       const [cx, cz] = toWorldPosition(midX, midZ, width, height, cellSize);
-      colliders.push({ pos: [cx, 0, cz], args: [(w * cellSize) / 2, 0, (h * cellSize) / 2] });
+      colliders.push({
+        pos: [cx, 0, cz],
+        args: [(w * cellSize) / 2, 0, (h * cellSize) / 2],
+      });
     }
   }
 
