@@ -14,6 +14,7 @@ interface TrapProps {
   onFail: (entryPosition: [number, number, number]) => void;
   slideDirection?: { x: number; z: number };
   interactive?: boolean;
+  castsShadow?: boolean;
 }
 
 const NEON_BLUE = new THREE.Color("#00ccff");
@@ -24,13 +25,15 @@ const TrapVisuals = memo(({
     doorMatRef, 
     borderRef, 
     borderMatRef, 
-    floorShape 
+    floorShape,
+    castsShadow,
 }: { 
     doorRef: React.RefObject<THREE.Mesh | null>, 
     doorMatRef: React.RefObject<THREE.MeshStandardMaterial | null>, 
     borderRef: React.RefObject<THREE.Mesh | null>, 
     borderMatRef: React.RefObject<THREE.MeshBasicMaterial | null>, 
-    floorShape: THREE.Shape 
+    floorShape: THREE.Shape;
+    castsShadow: boolean;
 }) => {
   return (
     <>
@@ -44,7 +47,7 @@ const TrapVisuals = memo(({
         <meshStandardMaterial color="#000000" roughness={1} transparent />
       </mesh>
 
-      <mesh ref={doorRef} position={[0, -0.05, 0]} castShadow receiveShadow>
+      <mesh ref={doorRef} position={[0, -0.05, 0]} castShadow={castsShadow} receiveShadow>
         <cylinderGeometry args={[0.44, 0.44, 0.05, 32]} />
         <meshStandardMaterial 
           ref={doorMatRef}
@@ -68,6 +71,7 @@ const TrapInteractive = memo(function TrapInteractive({
   position,
   onFail,
   slideDirection = { x: 0, z: -1 },
+  castsShadow = true,
 }: TrapProps) {
   const [isPhysicsOpen, setIsPhysicsOpen] = useState(false);
   const didTriggerFailRef = useRef(false);
@@ -161,6 +165,7 @@ const TrapInteractive = memo(function TrapInteractive({
         borderRef={borderRef}
         borderMatRef={borderMatRef}
         floorShape={floorShape}
+        castsShadow={castsShadow}
       />
 
       <RigidBody type="fixed" friction={0.1} restitution={0.2} colliders={false}>
@@ -210,7 +215,8 @@ const TrapInteractive = memo(function TrapInteractive({
 
 const TrapStatic = memo(function TrapStatic({
   position,
-}: Pick<TrapProps, 'position'>) {
+  castsShadow = true,
+}: Pick<TrapProps, 'position' | 'castsShadow'>) {
   const floorShape = useMemo(() => {
     const shape = new THREE.Shape();
     shape.moveTo(-0.5, -0.5);
@@ -233,15 +239,23 @@ const TrapStatic = memo(function TrapStatic({
         borderRef={{ current: null }}
         borderMatRef={{ current: null }}
         floorShape={floorShape}
+        castsShadow={castsShadow}
       />
     </group>
   );
 });
 
 export const Trap = memo(function Trap(props: TrapProps) {
-  const { interactive = true } = props;
+  const { interactive = true, castsShadow = true } = props;
   if (!interactive) {
-    return <TrapStatic position={props.position} />;
+    return <TrapStatic position={props.position} castsShadow={castsShadow} />;
   }
-  return <TrapInteractive position={props.position} onFail={props.onFail} slideDirection={props.slideDirection} />;
+  return (
+    <TrapInteractive
+      position={props.position}
+      onFail={props.onFail}
+      slideDirection={props.slideDirection}
+      castsShadow={castsShadow}
+    />
+  );
 });

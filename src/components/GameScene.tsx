@@ -22,8 +22,7 @@ import { isPerfEnabled, markDuration } from '../utils/perf';
 
 const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 const DROP_DISTANCE = 30;
-const SHADOW_MAP_IDLE: [number, number] = [2048, 2048];
-const SHADOW_MAP_TRANSITION: [number, number] = [1024, 1024];
+const SHADOW_MAP_SIZE: [number, number] = [2048, 2048];
 const NOOP_PORTAL_ENTER = (_destinationId: string, _entryPosition: [number, number, number]) => {};
 const NOOP_FAIL = (_entryPosition: [number, number, number]) => {};
 
@@ -324,7 +323,6 @@ function SceneContent({
     markDuration('scene.useFrame', performance.now() - frameStart);
   });
 
-  const inTransition = transitionPhase !== 'idle';
   const nextRevealCenter = useMemo<[number, number]>(() => {
     if (!transitionTarget) return [0, 0];
     return [
@@ -341,7 +339,7 @@ function SceneContent({
          position={[15, 25, 15]} 
          intensity={1.5} 
          castShadow 
-         shadow-mapSize={inTransition ? SHADOW_MAP_TRANSITION : SHADOW_MAP_IDLE}
+         shadow-mapSize={SHADOW_MAP_SIZE}
          shadow-camera-left={-12}
          shadow-camera-right={12}
          shadow-camera-top={12}
@@ -366,6 +364,7 @@ function SceneContent({
               onPortalEnter={onPortalEnter} 
               onFail={onFail} 
               isInteractive
+              castsStaticShadows={transitionPhase === 'idle'}
             />
             {(!isMobile || isReady) && (
               <Ball 
@@ -401,8 +400,8 @@ function SceneContent({
         />
        </Physics>
 
-       <EffectComposer enableNormalPass={false} multisampling={inTransition ? 0 : 8}>
-         <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={inTransition ? 1.0 : 1.5} />
+       <EffectComposer enableNormalPass={false} multisampling={transitionPhase !== 'idle' ? 0 : 8}>
+         <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={transitionPhase !== 'idle' ? 1.0 : 1.5} />
          <Noise opacity={0.02} />
          <Vignette eskil={false} offset={0.1} darkness={1.1} />
        </EffectComposer>

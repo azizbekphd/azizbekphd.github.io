@@ -12,6 +12,8 @@ interface MazeProps {
   onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   onFail?: (entryPosition: [number, number, number]) => void;
   isInteractive?: boolean;
+  /** When false, walls/traps do not cast shadows (avoids old level shadows on the board below during portal fall). */
+  castsStaticShadows?: boolean;
   revealCenter?: [number, number];
   revealRadius?: number;
 }
@@ -25,6 +27,7 @@ export const Maze = memo(function Maze({
   onPortalEnter,
   onFail = NOOP_ON_FAIL,
   isInteractive = true,
+  castsStaticShadows = true,
   revealCenter,
   revealRadius,
 }: MazeProps) {
@@ -84,7 +87,14 @@ export const Maze = memo(function Maze({
     ));
 
     const traps = filteredTraps.map(({ key, position, slideDirection }) => (
-      <Trap key={key} position={position} onFail={onFail} slideDirection={slideDirection} interactive={isInteractive} />
+      <Trap
+        key={key}
+        position={position}
+        onFail={onFail}
+        slideDirection={slideDirection}
+        interactive={isInteractive}
+        castsShadow={castsStaticShadows}
+      />
     ));
 
     return {
@@ -94,7 +104,7 @@ export const Maze = memo(function Maze({
       holesJSX: holes,
       trapsJSX: traps,
     };
-  }, [isInteractive, map, onPortalEnter, onFail, shouldUseReveal, withinRevealRadius]);
+  }, [castsStaticShadows, isInteractive, map, onPortalEnter, onFail, shouldUseReveal, withinRevealRadius]);
 
   useLayoutEffect(() => {
     const start = performance.now();
@@ -128,7 +138,7 @@ export const Maze = memo(function Maze({
           undefined as unknown as THREE.Material,
           wallVisuals.length,
         ]}
-        castShadow
+        castShadow={castsStaticShadows}
         receiveShadow
       >
         <boxGeometry args={[CELL_SIZE, WALL_HEIGHT, CELL_SIZE]} />
