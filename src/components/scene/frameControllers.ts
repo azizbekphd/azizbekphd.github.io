@@ -136,7 +136,15 @@ export function updateTransitionState(params: {
     const nextX = THREE.MathUtils.lerp(current.x, transitionTarget[0], steer);
     const nextZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], steer);
     ball.setTranslation({ x: nextX, y: current.y, z: nextZ }, true);
-    ball.setLinvel({ x: 0, y: Math.min(velocity.y, -15), z: 0 }, true);
+    const dampH = 0.22;
+    ball.setLinvel(
+      {
+        x: THREE.MathUtils.lerp(velocity.x, 0, dampH),
+        y: Math.min(velocity.y, 0),
+        z: THREE.MathUtils.lerp(velocity.z, 0, dampH),
+      },
+      true,
+    );
 
     if (!nextHandoffStarted && current.y <= transitionTarget[1] + 2.5) {
       nextHandoffStarted = true;

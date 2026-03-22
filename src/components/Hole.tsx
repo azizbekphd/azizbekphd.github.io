@@ -119,11 +119,11 @@ const HoleInteractive = memo(function HoleInteractive({
 
       {/* Physics: Sensor and Peripheral Support */}
       <RigidBody type="fixed" colliders={false}>
-        {/* Entrance Sensor */}
-        <CylinderCollider 
-          args={[0.5, 0.5]} 
-          position={[0, -0.5, 0]} 
-          sensor 
+        {/* Entrance: narrow + below the rim so we only portal after the ball drops into the opening */}
+        <CylinderCollider
+          args={[0.38, 0.22]}
+          position={[0, -0.72, 0]}
+          sensor
           onIntersectionEnter={({ other }) => {
             if (didTriggerEnterRef.current) return;
             if (isBallIntersection(other)) {
