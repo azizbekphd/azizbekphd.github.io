@@ -33,6 +33,12 @@ const FALL_VISUAL_DAMP_UP = 12;
 const FALL_VISUAL_DAMP_DOWN = 4.25;
 /** Consecutive frames in the handoff landing zone before maze swap. */
 const HANDOFF_LANDING_HOLD_FRAMES = 5;
+/**
+ * Next-maze reveal uses React state → Maze rebuilds layout when `revealRadius` changes.
+ * Quantize to a few steps to avoid ~16 full layout recomputes per transition (major frame drops near landing).
+ */
+const REVEAL_RADIUS_LEVELS = 5;
+const REVEAL_RADIUS_MIN = 2;
 const SHADOW_MAP_SIZE: [number, number] = [2048, 2048];
 const NOOP_PORTAL_ENTER = (_destinationId: string, _entryPosition: [number, number, number]) => {};
 const NOOP_FAIL = (_entryPosition: [number, number, number]) => {};
@@ -150,6 +156,7 @@ function SceneContent({
   const transitionFallIntensityRef = useRef(0);
   const composerRef = useRef<PostEffectComposer | null>(null);
   const transitionFxCacheRef = useRef<ReturnType<typeof collectTransitionFxEffects> | null>(null);
+  const transitionFxLastAppliedIntensityRef = useRef<number>(NaN);
 
   // Cache for materials to avoid traversal in useFrame
   const activeMaterialsRef = useRef<OpacityItem[]>([]);
@@ -353,12 +360,26 @@ function SceneContent({
         transitionFxCacheRef.current = collectTransitionFxEffects(composer);
       }
       if (transitionFxCacheRef.current) {
-        applyTransitionFxEffects(transitionFxCacheRef.current, nextSmooth);
+        const lastFx = transitionFxLastAppliedIntensityRef.current;
+        if (
+          Number.isNaN(lastFx) ||
+          Math.abs(nextSmooth - lastFx) >= 0.02 ||
+          (nextSmooth === 0 && lastFx !== 0)
+        ) {
+          applyTransitionFxEffects(transitionFxCacheRef.current, nextSmooth);
+          transitionFxLastAppliedIntensityRef.current = nextSmooth;
+        }
       }
     }
 
     if (nextMaze) {
-      const desiredRadius = Math.max(2, Math.floor(2 + nextOpacityRef.current * 16));
+      const o = nextOpacityRef.current;
+      const level = Math.min(
+        REVEAL_RADIUS_LEVELS - 1,
+        Math.floor(o * REVEAL_RADIUS_LEVELS),
+      );
+      const span = 16;
+      const desiredRadius = REVEAL_RADIUS_MIN + Math.round((level / (REVEAL_RADIUS_LEVELS - 1)) * span);
       if (desiredRadius !== revealRadiusRef.current) {
         revealRadiusRef.current = desiredRadius;
         setNextRevealRadius(desiredRadius);
@@ -468,7 +489,8 @@ function SceneContent({
        <EffectComposer
          ref={composerRef}
          enableNormalPass={false}
-         multisampling={transitionPhase !== 'idle' ? 0 : 8}
+         /** Fixed level avoids framebuffer/MSAA teardown when `idle` starts (was a large hitch with 0→8). */
+         multisampling={4}
        >
          <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={1.5} />
          <ChromaticAberration offset={[0, 0]} radialModulation modulationOffset={0.12} />
