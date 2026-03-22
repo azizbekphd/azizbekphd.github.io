@@ -1,29 +1,23 @@
-import type { Tile, PortalTile } from './types';
-
-const FLOOR = 0;
-const WALL = 1;
-const START = 9;
-const TRAP = 6;
-
-const p = (destination: string, label: string, color?: string): PortalTile => ({
-  type: 'portal',
-  destination,
-  label,
-  color,
-});
+import type { Tile } from './types';
+import {
+  createPortalTile,
+  TILE_FLOOR as FLOOR,
+  TILE_START as START,
+  TILE_WALL as WALL,
+} from './utils/maze/tileConstants';
 
 export const levelHome: Tile[][] = [
-  [WALL, WALL, WALL, WALL, WALL, p('projects', 'PROJECTS', '#00ccff'), WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, WALL, WALL, WALL, createPortalTile('projects', 'PROJECTS', '#00ccff'), WALL, WALL, WALL, WALL, WALL],
   [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
   [WALL, FLOOR, WALL, WALL, FLOOR, WALL, FLOOR, WALL, WALL, FLOOR, WALL],
   [WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL],
   [WALL, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, WALL],
-  [p('skills', 'SKILLS', '#ff00ff'), FLOOR, WALL, FLOOR, FLOOR, START, FLOOR, FLOOR, WALL, FLOOR, p('contact', 'CONTACT', '#ffff00')],
+  [createPortalTile('skills', 'SKILLS', '#ff00ff'), FLOOR, WALL, FLOOR, FLOOR, START, FLOOR, FLOOR, WALL, FLOOR, createPortalTile('contact', 'CONTACT', '#ffff00')],
   [WALL, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, WALL],
   [WALL, FLOOR, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, FLOOR, WALL],
   [WALL, FLOOR, WALL, WALL, FLOOR, WALL, FLOOR, WALL, WALL, FLOOR, WALL],
   [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
-  [WALL, WALL, WALL, WALL, WALL, p('endless', 'ENDLESS', '#00ff88'), WALL, WALL, WALL, WALL, WALL],
+  [WALL, WALL, WALL, WALL, WALL, createPortalTile('endless', 'ENDLESS', '#00ff88'), WALL, WALL, WALL, WALL, WALL],
 ];
 
 export const levelProjects: Tile[][] = [
@@ -37,7 +31,7 @@ export const levelProjects: Tile[][] = [
   [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL, WALL],
   [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, WALL],
   [WALL, WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
-  [WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, p('home', 'HOME', '#ffffff'), WALL, WALL],
+  [WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, createPortalTile('home', 'HOME', '#ffffff'), WALL, WALL],
   [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];
 
@@ -51,7 +45,7 @@ export const levelSkills: Tile[][] = [
   [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL],
   [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL],
   [WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
-  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, p('home', 'HOME', '#ffffff'), WALL],
+  [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, createPortalTile('home', 'HOME', '#ffffff'), WALL],
   [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];
 
@@ -67,13 +61,13 @@ export const levelContact: Tile[][] = [
   [WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, FLOOR, WALL, WALL, WALL],
   [WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, WALL, WALL, WALL],
   [WALL, WALL, WALL, FLOOR, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
-  [WALL, WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, p('home', 'HOME', '#ffffff'), WALL, WALL, WALL],
+  [WALL, WALL, WALL, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, FLOOR, createPortalTile('home', 'HOME', '#ffffff'), WALL, WALL, WALL],
   [WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];
 
 export const levelRetry: Tile[][] = [
   [WALL, WALL, WALL, WALL, WALL, WALL, WALL],
-  [WALL, p('endless/retry', 'RETRY', '#ff4444'), WALL, FLOOR, WALL, p('home', 'HOME', '#ffffff'), WALL],
+  [WALL, createPortalTile('endless/retry', 'RETRY', '#ff4444'), WALL, FLOOR, WALL, createPortalTile('home', 'HOME', '#ffffff'), WALL],
   [WALL, FLOOR, FLOOR, START, FLOOR, FLOOR, WALL],
   [WALL, WALL, WALL, WALL, WALL, WALL, WALL],
 ];

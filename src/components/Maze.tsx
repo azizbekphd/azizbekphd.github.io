@@ -1,85 +1,62 @@
 import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { Hole } from './Hole';
 import { Trap } from './Trap';
-import { useMemo, useRef, useLayoutEffect, memo } from 'react';
-import type { ReactElement } from 'react';
+import { useMemo, useRef, useLayoutEffect, memo, useCallback } from 'react';
 import * as THREE from 'three';
-import { getTileType, isWall, isFloor, isStart } from '../types';
 import type { LevelMap } from '../types';
+import { buildMazeLayoutData } from '../utils/maze/layout';
+import { markDuration, withPerfMeasure } from '../utils/perf';
 
 interface MazeProps {
   map: LevelMap;
-  mazeId: string;
   onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   onFail?: (entryPosition: [number, number, number]) => void;
+  isInteractive?: boolean;
+  revealCenter?: [number, number];
+  revealRadius?: number;
 }
 
 const CELL_SIZE = 1;
 const WALL_HEIGHT = 1.0;
+const NOOP_ON_FAIL = () => {};
 
-export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = () => {} }: MazeProps) {
+export const Maze = memo(function Maze({
+  map,
+  onPortalEnter,
+  onFail = NOOP_ON_FAIL,
+  isInteractive = true,
+  revealCenter,
+  revealRadius,
+}: MazeProps) {
   const wallMeshRef = useRef<THREE.InstancedMesh>(null);
   const floorMeshRef = useRef<THREE.InstancedMesh>(null);
+  const shouldUseReveal = !isInteractive && revealCenter !== undefined && revealRadius !== undefined;
 
-  const width = map[0].length;
-  const height = map.length;
+  const withinRevealRadius = useCallback((x: number, z: number) => {
+    if (!shouldUseReveal || !revealCenter || revealRadius === undefined) return true;
+    const dx = x - revealCenter[0];
+    const dz = z - revealCenter[1];
+    return (dx * dx) + (dz * dz) <= revealRadius * revealRadius;
+  }, [revealCenter, revealRadius, shouldUseReveal]);
 
   const { wallVisuals, floorVisuals, collidersJSX, holesJSX, trapsJSX } = useMemo(() => {
-    const wallV: [number, number, number][] = [];
-    const floorV: [number, number, number][] = [];
-    
-    map.forEach((row, z) => {
-      row.forEach((cell, x) => {
-        const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
-        const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
-        
-        if (isWall(cell)) {
-          wallV.push([cx, WALL_HEIGHT / 2, cz]);
-        } else if (isFloor(cell)) {
-          // Check if it's a "simple" floor or start (needs explicit floor mesh)
-          // Interactive tiles like Hole and Trap might handle their own floor visual
-          const type = getTileType(cell);
-          if (type === 'floor' || type === 'start') {
-            floorV.push([cx, -0.05, cz]);
-          }
-        }
-      });
-    });
+    const layout = withPerfMeasure('maze.component.buildLayoutMemo', () => buildMazeLayoutData(map, CELL_SIZE, WALL_HEIGHT));
+    const wallCollidersData = layout.wallColliders;
+    const floorCollidersData = layout.floorColliders;
+    const filteredWallVisuals = shouldUseReveal
+      ? layout.wallVisuals.filter(([x, _y, z]) => withinRevealRadius(x, z))
+      : layout.wallVisuals;
+    const filteredFloorVisuals = shouldUseReveal
+      ? layout.floorVisuals.filter(([x, _y, z]) => withinRevealRadius(x, z))
+      : layout.floorVisuals;
+    const filteredPortals = shouldUseReveal
+      ? layout.portals.filter(({ position }) => withinRevealRadius(position[0], position[2]))
+      : layout.portals;
+    const filteredTraps = shouldUseReveal
+      ? layout.traps.filter(({ position }) => withinRevealRadius(position[0], position[2]))
+      : layout.traps;
 
-    const getMergedColliders = (isTargetType: (cell: any) => boolean) => {
-      const colliders: { pos: [number, number, number]; args: [number, number, number] }[] = [];
-      const visited = Array(height).fill(0).map(() => Array(width).fill(false));
-      for (let z = 0; z < height; z++) {
-        for (let x = 0; x < width; x++) {
-          if (isTargetType(map[z][x]) && !visited[z][x]) {
-            let w = 1;
-            while (x + w < width && isTargetType(map[z][x + w]) && !visited[z][x + w]) w++;
-            let h = 1;
-            while (z + h < height) {
-              let possible = true;
-              for (let i = 0; i < w; i++) if (!isTargetType(map[z + h][x + i]) || visited[z + h][x + i]) { possible = false; break; }
-              if (possible) h++; else break;
-            }
-            for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) visited[z + i][x + j] = true;
-            const midX = x + (w - 1) / 2;
-            const midZ = z + (h - 1) / 2;
-            const cx = (midX - width / 2) * CELL_SIZE + CELL_SIZE / 2;
-            const cz = (midZ - height / 2) * CELL_SIZE + CELL_SIZE / 2;
-            colliders.push({ pos: [cx, 0, cz], args: [(w * CELL_SIZE) / 2, 0, (h * CELL_SIZE) / 2] });
-          }
-        }
-      }
-      return colliders;
-    };
-
-    const wallCollidersData = getMergedColliders(isWall);
-    // Everything that's not a wall has a floor collider, but Hole and Trap manage their own complex physics
-    const floorCollidersData = getMergedColliders((cell) => {
-        const type = getTileType(cell);
-        return type === 'floor' || type === 'start';
-    });
-
-    const colliders = (
+    const colliders = isInteractive ? (
       <>
         <RigidBody type="fixed" friction={0.1} restitution={0.2}>
           {wallCollidersData.map((c, i) => (
@@ -92,56 +69,35 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
           ))}
         </RigidBody>
       </>
-    );
+    ) : null;
 
-    const holes: ReactElement[] = [];
-    const traps: ReactElement[] = [];
-    map.forEach((row, z) => {
-      row.forEach((cell, x) => {
-        const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
-        const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
-        const type = getTileType(cell);
+    const holes = filteredPortals.map(({ key, position, portal }) => (
+      <Hole
+        key={key}
+        position={position}
+        destinationId={portal.destination}
+        onEnter={onPortalEnter}
+        label={portal.label}
+        color={portal.color}
+        interactive={isInteractive}
+      />
+    ));
 
-        if (type === 'trap') {
-          // Find closest wall for sliding direction
-          const neighbors = [
-            { dx: 0, dz: -1 }, // North
-            { dx: 0, dz: 1 },  // South
-            { dx: 1, dz: 0 },  // East
-            { dx: -1, dz: 0 }  // West
-          ];
-          let slideDir = { x: 0, z: -1 };
-          for (const { dx, dz } of neighbors) {
-            const nx = x + dx;
-            const nz = z + dz;
-            if (nz >= 0 && nz < map.length && nx >= 0 && nx < map[0].length) {
-              if (isWall(map[nz][nx])) {
-                slideDir = { x: dx, z: dz };
-                break;
-              }
-            }
-          }
-          traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} slideDirection={slideDir} />);
-        } else if (type === 'portal') {
-          const portal = cell as any;
-          holes.push(
-            <Hole 
-                key={`h-${x}-${z}`} 
-                position={[cx, 0, cz]} 
-                destinationId={portal.destination} 
-                onEnter={onPortalEnter} 
-                label={portal.label} 
-                color={portal.color}
-            />
-          );
-        }
-      });
-    });
+    const traps = filteredTraps.map(({ key, position, slideDirection }) => (
+      <Trap key={key} position={position} onFail={onFail} slideDirection={slideDirection} interactive={isInteractive} />
+    ));
 
-    return { wallVisuals: wallV, floorVisuals: floorV, collidersJSX: colliders, holesJSX: holes, trapsJSX: traps };
-  }, [map, width, height, onPortalEnter, onFail]);
+    return {
+      wallVisuals: filteredWallVisuals,
+      floorVisuals: filteredFloorVisuals,
+      collidersJSX: colliders,
+      holesJSX: holes,
+      trapsJSX: traps,
+    };
+  }, [isInteractive, map, onPortalEnter, onFail, shouldUseReveal, withinRevealRadius]);
 
   useLayoutEffect(() => {
+    const start = performance.now();
     const temp = new THREE.Object3D();
     if (wallMeshRef.current) {
       wallVisuals.forEach((pos, i) => {
@@ -160,6 +116,7 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
       });
       floorMeshRef.current.instanceMatrix.needsUpdate = true;
     }
+    markDuration('maze.component.updateInstanceMatrices', performance.now() - start);
   }, [wallVisuals, floorVisuals]);
 
   return (

@@ -2,11 +2,18 @@ import { RigidBody, CylinderCollider, CuboidCollider, RapierRigidBody } from '@r
 import { useState, useMemo, useRef, memo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import {
+  applySuctionImpulse,
+  clearBallInRangeRef,
+  isBallIntersection,
+  setBallInRangeRef,
+} from '../utils/physics/suction';
 
 interface TrapProps {
   position: [number, number, number];
   onFail: (entryPosition: [number, number, number]) => void;
   slideDirection?: { x: number; z: number };
+  interactive?: boolean;
 }
 
 const NEON_BLUE = new THREE.Color("#00ccff");
@@ -57,8 +64,13 @@ const TrapVisuals = memo(({
   );
 });
 
-export const Trap = memo(function Trap({ position, onFail, slideDirection = { x: 0, z: -1 } }: TrapProps) {
+const TrapInteractive = memo(function TrapInteractive({
+  position,
+  onFail,
+  slideDirection = { x: 0, z: -1 },
+}: TrapProps) {
   const [isPhysicsOpen, setIsPhysicsOpen] = useState(false);
+  const didTriggerFailRef = useRef(false);
   const trapPosVec = useMemo(() => new THREE.Vector3(...position), [position]);
   const tempVec = useRef(new THREE.Vector3());
   
@@ -117,7 +129,7 @@ export const Trap = memo(function Trap({ position, onFail, slideDirection = { x:
         borderMatRef.current.opacity = globalOpacity;
     }
     if (borderRef.current) {
-        const pulse = isOpen ? Math.sin(Date.now() * 0.01) * 0.2 + 0.8 : 1;
+        const pulse = isOpen ? Math.sin(state.clock.elapsedTime * 8) * 0.2 + 0.8 : 1;
         borderRef.current.scale.setScalar(isOpen ? pulse : 1);
     }
 
@@ -128,20 +140,16 @@ export const Trap = memo(function Trap({ position, onFail, slideDirection = { x:
     }
 
     if (isPhysicsOpen && t > 0.6 && ballInRangeRef.current) {
-        const body = ballInRangeRef.current;
-        const ballPos = body.translation();
-        tempVec.current.set(ballPos.x, position[1], ballPos.z);
-        const dist = trapPosVec.distanceTo(tempVec.current);
-        
-        if (dist < 1.0) {
-            const pullStrength = 10.0 * (1 - dist);
-            tempVec.current.set(position[0] - ballPos.x, 0, position[2] - ballPos.z).normalize();
-            body.applyImpulse({ 
-                x: tempVec.current.x * pullStrength * delta, 
-                y: -1.5 * delta,
-                z: tempVec.current.z * pullStrength * delta 
-            }, true);
-        }
+      applySuctionImpulse({
+        body: ballInRangeRef.current,
+        attractor: trapPosVec,
+        planeY: position[1],
+        tempVec: tempVec.current,
+        delta,
+        radius: 1.0,
+        horizontalStrength: 10.0,
+        verticalStrength: -1.5,
+      });
     }
   });
 
@@ -157,41 +165,83 @@ export const Trap = memo(function Trap({ position, onFail, slideDirection = { x:
 
       <RigidBody type="fixed" friction={0.1} restitution={0.2} colliders={false}>
         {!isPhysicsOpen && <CuboidCollider args={[0.5, 0.5, 0.5]} position={[0, -0.5, 0]} />}
-      </RigidBody>
-
-      <RigidBody type="fixed" friction={0.1} restitution={0.2} colliders={false}>
         <CuboidCollider args={[0.1, 0.5, 0.5]} position={[-0.45, -0.5, 0]} />
         <CuboidCollider args={[0.1, 0.5, 0.5]} position={[0.45, -0.5, 0]} />
         <CuboidCollider args={[0.4, 0.5, 0.1]} position={[0, -0.5, -0.45]} />
         <CuboidCollider args={[0.4, 0.5, 0.1]} position={[0, -0.5, 0.45]} />
-      </RigidBody>
 
-      <RigidBody type="fixed" sensor colliders={false}
-        onIntersectionEnter={({ other }) => {
-          if (other.rigidBodyObject?.name === "ball") {
-            ballInRangeRef.current = other.rigidBody ?? null;
-          }
+        <CylinderCollider
+          args={[0.5, 1.0]}
+          position={[0, 0, 0]}
+          sensor
+          onIntersectionEnter={({ other }) => {
+          setBallInRangeRef(ballInRangeRef, other);
         }}
-        onIntersectionExit={({ other }) => {
-          if (other.rigidBodyObject?.name === "ball") {
-            ballInRangeRef.current = null;
-          }
+          onIntersectionExit={({ other }) => {
+          clearBallInRangeRef(ballInRangeRef, other);
         }}
-      >
-        <CylinderCollider args={[0.5, 1.0]} position={[0, 0, 0]} />
-      </RigidBody>
+        />
 
-      <RigidBody type="fixed" sensor colliders={false} onIntersectionEnter={({ other }) => {
-        if (other.rigidBodyObject?.name === "ball" && isPhysicsOpen) {
-          const rb = other.rigidBody;
-          if (rb) {
-            const pos = rb.translation();
-            onFail([pos.x, pos.y, pos.z]);
-          }
-        }
-      }}>
-        <CylinderCollider args={[0.3, 0.4]} position={[0, -1.0, 0]} />
+        <CylinderCollider
+          args={[0.3, 0.4]}
+          position={[0, -1.0, 0]}
+          sensor
+          onIntersectionEnter={({ other }) => {
+            if (didTriggerFailRef.current) return;
+            if (isBallIntersection(other) && isPhysicsOpen) {
+              const rb = other.rigidBody;
+              if (rb) {
+                didTriggerFailRef.current = true;
+                const pos = rb.translation();
+                onFail([pos.x, pos.y, pos.z]);
+              }
+            }
+          }}
+          onIntersectionExit={({ other }) => {
+            if (isBallIntersection(other)) {
+              didTriggerFailRef.current = false;
+            }
+          }}
+        />
       </RigidBody>
     </group>
   );
+});
+
+const TrapStatic = memo(function TrapStatic({
+  position,
+}: Pick<TrapProps, 'position'>) {
+  const floorShape = useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.moveTo(-0.5, -0.5);
+    shape.lineTo(0.5, -0.5);
+    shape.lineTo(0.5, 0.5);
+    shape.lineTo(-0.5, 0.5);
+    shape.lineTo(-0.5, -0.5);
+
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, 0.45, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+    return shape;
+  }, []);
+
+  return (
+    <group position={position}>
+      <TrapVisuals
+        doorRef={{ current: null }}
+        doorMatRef={{ current: null }}
+        borderRef={{ current: null }}
+        borderMatRef={{ current: null }}
+        floorShape={floorShape}
+      />
+    </group>
+  );
+});
+
+export const Trap = memo(function Trap(props: TrapProps) {
+  const { interactive = true } = props;
+  if (!interactive) {
+    return <TrapStatic position={props.position} />;
+  }
+  return <TrapInteractive position={props.position} onFail={props.onFail} slideDirection={props.slideDirection} />;
 });

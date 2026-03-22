@@ -1,4 +1,11 @@
-import type { Tile, LevelMap, PortalTile } from '../types';
+import type { LevelMap } from '../types';
+import {
+  createPortalTile,
+  TILE_FLOOR as FLOOR,
+  TILE_START as START,
+  TILE_TRAP as TRAP,
+  TILE_WALL as WALL,
+} from './maze/tileConstants';
 
 // Simple seeded random number generator
 class SquirrelRandom {
@@ -11,18 +18,6 @@ class SquirrelRandom {
     return (this.seed - 1) / 2147483646;
   }
 }
-
-const FLOOR = 0;
-const WALL = 1;
-const START = 9;
-const TRAP = 6;
-
-const p = (destination: string, label: string, color?: string): PortalTile => ({
-  type: 'portal',
-  destination,
-  label,
-  color,
-});
 
 export function generateMaze(seedStr: string, size = 21): LevelMap {
   let seedNum = 0;
@@ -66,62 +61,82 @@ export function generateMaze(seedStr: string, size = 21): LevelMap {
   for (let z = size - 2; z > size / 2 && !nextPos; z--) {
     for (let x = size - 2; x > size / 2 && !nextPos; x--) {
       if (maze[z][x] === FLOOR) {
-        maze[z][x] = p('endless', 'NEXT', '#00ff88');
+        maze[z][x] = createPortalTile('endless', 'NEXT', '#00ff88');
         nextPos = [x, z];
       }
     }
   }
 
   const pathList: [number, number][] = [];
+  const pathVisited = new Uint8Array(size * size);
   if (nextPos) {
-      const findPath = (cx: number, cz: number, targetX: number, targetZ: number, visited: Set<string>): [number, number][] | null => {
-          const key = `${cx},${cz}`;
-          if (cx === targetX && cz === targetZ) return [[cx, cz]];
-          visited.add(key);
-          const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-          for (const [dx, dz] of directions) {
-              const nx = cx + dx;
-              const nz = cz + dz;
-              const cell = maze[nz][nx];
-              if (nx >= 0 && nx < size && nz >= 0 && nz < size && cell !== WALL && !visited.has(`${nx},${nz}`)) {
-                  const res = findPath(nx, nz, targetX, targetZ, visited);
-                  if (res) return [[cx, cz], ...res];
-              }
-          }
-          return null;
-      };
-      const path = findPath(1, 1, nextPos[0], nextPos[1], new Set());
-      if (path) path.forEach(p => pathList.push(p));
-  }
+    const toIndex = (x: number, z: number) => z * size + x;
+    const startIdx = toIndex(1, 1);
+    const targetIdx = toIndex(nextPos[0], nextPos[1]);
+    const parent = new Int32Array(size * size);
+    parent.fill(-1);
+    const queue = new Int32Array(size * size);
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = startIdx;
+    pathVisited[startIdx] = 1;
 
-  const pathSet = new Set(pathList.map(p => `${p[0]},${p[1]}`));
+    while (head < tail) {
+      const idx = queue[head++];
+      if (idx === targetIdx) break;
+      const x = idx % size;
+      const z = Math.floor(idx / size);
+      const neighbors: [number, number][] = [
+        [x, z + 1],
+        [x, z - 1],
+        [x + 1, z],
+        [x - 1, z],
+      ];
+      for (const [nx, nz] of neighbors) {
+        if (nx < 0 || nx >= size || nz < 0 || nz >= size) continue;
+        if (maze[nz][nx] === WALL) continue;
+        const nextIdx = toIndex(nx, nz);
+        if (pathVisited[nextIdx]) continue;
+        pathVisited[nextIdx] = 1;
+        parent[nextIdx] = idx;
+        queue[tail++] = nextIdx;
+      }
+    }
+
+    if (pathVisited[targetIdx]) {
+      let idx = targetIdx;
+      while (idx !== -1) {
+        const x = idx % size;
+        const z = Math.floor(idx / size);
+        pathList.push([x, z]);
+        idx = parent[idx];
+      }
+      pathList.reverse();
+    }
+  }
+  const pathSet = new Uint8Array(size * size);
+  for (const [x, z] of pathList) {
+    pathSet[z * size + x] = 1;
+  }
 
   // Place traps (6) on the main path
   if (pathList.length > 30) {
     const targetTraps = 20;
-    const distributionPoints: number[] = [];
-    const step = 1 / targetTraps;
-    let lastValue = 0;
-    for (let i = 0; i < targetTraps; i++) {
-      lastValue += step;
-      distributionPoints.push(lastValue);
-    }
-    
-    distributionPoints.forEach(percent => {
-      const index = Math.floor(pathList.length * percent) - 1;
+    for (let i = 1; i <= targetTraps; i++) {
+      const index = Math.floor((pathList.length * i) / targetTraps) - 1;
       const [tx, tz] = pathList[index];
       if (maze[tz][tx] === FLOOR) {
         maze[tz][tx] = TRAP;
       }
-    });
+    }
   }
 
   // Place "Back Home" hole (2) - Ensure it's NOT on the path
   let placedHome = false;
   for (let z = 1; z < size - 1 && !placedHome; z++) {
     for (let x = size - 2; x > 1 && !placedHome; x--) {
-      if (maze[z][x] === FLOOR && !pathSet.has(`${x},${z}`)) {
-        maze[z][x] = p('home', 'HOME', '#ffffff');
+      if (maze[z][x] === FLOOR && pathSet[z * size + x] === 0) {
+        maze[z][x] = createPortalTile('home', 'HOME', '#ffffff');
         placedHome = true;
       }
     }

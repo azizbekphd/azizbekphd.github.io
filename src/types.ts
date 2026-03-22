@@ -9,7 +9,7 @@ export interface PortalTile {
 
 export interface TrapTile {
   type: 'trap';
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface StartTile {
@@ -21,7 +21,7 @@ export type Tile =
   | PortalTile 
   | TrapTile 
   | StartTile 
-  | { type: string; [key: string]: any };
+  | { type: string; [key: string]: unknown };
 
 export type LevelMap = Tile[][];
 
@@ -29,6 +29,7 @@ export interface MazeDescriptor {
   id: string;
   path: string;
   map: LevelMap;
+  startPosition?: [number, number, number];
 }
 
 // Helper to get tile type

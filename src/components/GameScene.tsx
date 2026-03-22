@@ -6,68 +6,31 @@ import { Maze } from './Maze';
 import { Ball } from './Ball';
 import * as THREE from 'three';
 import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing';
-import { levelHome, levelProjects, levelSkills, levelContact, levelRetry } from '../levels';
-import { generateMaze } from '../utils/mazeGenerator';
-import { isStart } from '../types';
-import type { MazeDescriptor, LevelMap } from '../types';
+import type { MazeDescriptor } from '../types';
+import { mazeFromPath, randomSeed } from '../utils/maze/routing';
+import { getDescriptorStartPosition } from '../utils/maze/spawn';
+import {
+  syncCameraAndLight,
+  updateActiveBoardTilt,
+  updateNextBoardRotation,
+  updateTransitionState,
+} from './scene/frameControllers';
+import { useMobileMotionGravity } from './scene/useMobileMotionGravity';
+import { isPerfEnabled, markDuration } from '../utils/perf';
 
 /* eslint-disable react-hooks/immutability */
 
 const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 const DROP_DISTANCE = 30;
-const CAMERA_HEIGHT = 20;
+const SHADOW_MAP_IDLE: [number, number] = [2048, 2048];
+const SHADOW_MAP_TRANSITION: [number, number] = [1024, 1024];
+const NOOP_PORTAL_ENTER = (_destinationId: string, _entryPosition: [number, number, number]) => {};
+const NOOP_FAIL = (_entryPosition: [number, number, number]) => {};
 
-type MazeId = 'home' | 'projects' | 'skills' | 'contact' | 'endless' | 'retry';
 type TransitionPhase = 'idle' | 'falling' | 'handoff';
-
-function randomSeed() {
-  return Math.random().toString(36).substring(7);
-}
-
-function mazeFromPath(path: string): MazeDescriptor {
-  if (path === '/projects') return { id: 'projects', path, map: levelProjects };
-  if (path === '/skills') return { id: 'skills', path, map: levelSkills };
-  if (path === '/contact') return { id: 'contact', path, map: levelContact };
-
-  if (path === '/endless') {
-    const seed = randomSeed();
-    return {
-      id: 'endless',
-      path: `/endless/${seed}`,
-      map: generateMaze(seed),
-    };
-  }
-
-  const retryMatch = path.match(/^\/endless\/([^/]+)\/retry$/);
-  if (retryMatch) {
-    return { id: 'retry', path, map: levelRetry };
-  }
-
-  const endlessMatch = path.match(/^\/endless\/([^/]+)$/);
-  if (endlessMatch) {
-    const seed = endlessMatch[1];
-    return {
-      id: 'endless',
-      path: `/endless/${seed}`,
-      map: generateMaze(seed),
-    };
-  }
-
-  return { id: 'home', path: '/', map: levelHome };
-}
-
-function getStartPosition(map: LevelMap, yOffset = 0): [number, number, number] {
-  const width = map[0].length;
-  const height = map.length;
-  for (let z = 0; z < height; z++) {
-    for (let x = 0; x < width; x++) {
-      if (isStart(map[z][x])) {
-        return [(x - width / 2) + 0.5, yOffset + 0.5, (z - height / 2) + 0.5];
-      }
-    }
-  }
-  return [0, yOffset + 0.5, 0];
-}
+type MaterialOpacityData = { globalOpacity?: number; localOpacity?: number };
+type TextOpacityNode = THREE.Object3D & { fillOpacity?: number; isText?: boolean; material?: THREE.Material };
+type OpacityItem = { material: THREE.Material; text?: TextOpacityNode };
 
 // Separate component to handle gravity updates directly on the physics world
 function GravityController({
@@ -142,12 +105,20 @@ function SceneContent({
   const lightRef = useRef<THREE.DirectionalLight>(null);
 
   // Cache for materials to avoid traversal in useFrame
-  const activeMaterialsRef = useRef<{ material: THREE.Material, text?: any }[]>([]);
-  const nextMaterialsRef = useRef<{ material: THREE.Material, text?: any }[]>([]);
+  const activeMaterialsRef = useRef<OpacityItem[]>([]);
+  const nextMaterialsRef = useRef<OpacityItem[]>([]);
   const [isNextMazeVisible, setIsNextMazeVisible] = useState(false);
+  const [nextRevealRadius, setNextRevealRadius] = useState(0);
+  const revealRadiusRef = useRef(0);
+  const renderStatsRef = useRef({
+    elapsed: 0,
+    maxDeltaMs: 0,
+    frameCount: 0,
+  });
 
   const collectMaterials = useCallback((group: THREE.Group | null) => {
-    const collected: { material: THREE.Material, text?: any }[] = [];
+    const start = performance.now();
+    const collected: OpacityItem[] = [];
     if (!group) return collected;
     group.traverse((node) => {
       if (node.userData.skipOpacity) return;
@@ -161,19 +132,21 @@ function SceneContent({
           }
         });
       }
-      if ((node as any).isText || (node as any).fillOpacity !== undefined) {
-        collected.push({ material: (node as any).material, text: node });
+      const textNode = node as TextOpacityNode;
+      if ((textNode.isText || textNode.fillOpacity !== undefined) && textNode.material) {
+        collected.push({ material: textNode.material, text: textNode });
       }
     });
+    markDuration('scene.collectMaterials', performance.now() - start);
     return collected;
   }, []);
 
-  const updateOpacity = useCallback((items: { material: THREE.Material, text?: any }[], opacity: number) => {
+  const updateOpacity = useCallback((items: OpacityItem[], opacity: number) => {
     items.forEach((item) => {
       if (item.text) {
         item.text.fillOpacity = opacity;
       } else {
-        const mat = item.material;
+        const mat = item.material as THREE.Material & { userData: MaterialOpacityData };
         mat.userData.globalOpacity = opacity;
         const local = mat.userData.localOpacity !== undefined ? mat.userData.localOpacity : 1;
         mat.opacity = local * opacity;
@@ -184,30 +157,38 @@ function SceneContent({
   // Use layout effect for immediate opacity application before paint
   useLayoutEffect(() => {
     if (activeBoardRef.current) {
+      const start = performance.now();
       activeMaterialsRef.current = collectMaterials(activeBoardRef.current);
       updateOpacity(activeMaterialsRef.current, activeOpacityRef.current);
+      markDuration('scene.activeMazeOpacitySetup', performance.now() - start);
     }
   }, [activeMaze.id, collectMaterials, updateOpacity]);
 
   useLayoutEffect(() => {
     if (nextMaze) {
+        const start = performance.now();
         setIsNextMazeVisible(false);
+        revealRadiusRef.current = 2;
+        setNextRevealRadius(2);
         // Immediate collection and visibility setup to avoid lag
         if (nextBoardRef.current) {
             nextMaterialsRef.current = collectMaterials(nextBoardRef.current);
             updateOpacity(nextMaterialsRef.current, 0); 
             setIsNextMazeVisible(true);
         }
+        markDuration('scene.nextMazeOpacitySetup', performance.now() - start);
     } else {
         nextMaterialsRef.current = [];
         setIsNextMazeVisible(false);
+        revealRadiusRef.current = 0;
+        setNextRevealRadius(0);
     }
   }, [nextMaze, collectMaterials, updateOpacity]);
 
   // Synchronize ball and camera teleportation with maze swap to prevent jiggles and tunneling
   useLayoutEffect(() => {
     if (ballRef.current && activeMaze.path !== lastActiveMazePath.current) {
-        const targetStartLocal = getStartPosition(activeMaze.map, 0);
+        const targetStartLocal = getDescriptorStartPosition(activeMaze, 0);
         
         // Zero out velocities and teleport to prevent tunneling and preserved momentum from fall
         ballRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
@@ -226,31 +207,18 @@ function SceneContent({
 
         lastActiveMazePath.current = activeMaze.path;
     }
-  }, [activeMaze.path, camera, nextMazeOffset, ballRef]);
+  }, [activeMaze.path, activeMaze.map, camera, nextMazeOffset, ballRef]);
 
   useEffect(() => {
     camera.up.set(0, 0, -1);
   }, [camera]);
 
-  useEffect(() => {
-    if (!isMobile || !isReady) return;
-    const handleMotion = (event: DeviceMotionEvent) => {
-      const acc = event.accelerationIncludingGravity;
-      if (!acc) return;
-      const s = 5.0;
-      const ax = acc.x ?? 0;
-      const ay = acc.y ?? 0;
-      const az = acc.z ?? 9.8;
-      const safeAz = Math.max(1.0, az);
-      
-      targetGravity.current.set(-ax * s, -safeAz * s, ay * s);
-      const mobileMaxTilt = 18 * (Math.PI / 180);
-      mobileRotation.current.x = (ay / 10) * mobileMaxTilt;
-      mobileRotation.current.z = (ax / 10) * mobileMaxTilt;
-    };
-    window.addEventListener('devicemotion', handleMotion, true);
-    return () => window.removeEventListener('devicemotion', handleMotion);
-  }, [isReady]);
+  useMobileMotionGravity({
+    isMobile,
+    isReady,
+    targetGravity,
+    mobileRotation,
+  });
 
   useEffect(() => {
     if (transitionPhase === 'idle') {
@@ -263,93 +231,87 @@ function SceneContent({
     }
   }, [transitionPhase, updateOpacity]);
 
-  useFrame((state) => {
-    if (activeBoardRef.current) {
-      if (controlsEnabled && !isFailed && isReady) {
-        if (!isMobile) {
-          const maxTilt = 15 * (Math.PI / 210);
-          const mouseX = state.pointer.x;
-          const mouseY = state.pointer.y;
-          activeBoardRef.current.rotation.x = THREE.MathUtils.lerp(activeBoardRef.current.rotation.x, -mouseY * maxTilt, 0.05);
-          activeBoardRef.current.rotation.z = THREE.MathUtils.lerp(activeBoardRef.current.rotation.z, -mouseX * maxTilt, 0.05);
-          targetGravity.current.set(mouseX * 15, -30, -mouseY * 15);
-        } else {
-          activeBoardRef.current.rotation.x = THREE.MathUtils.lerp(activeBoardRef.current.rotation.x, mobileRotation.current.x, 0.1);
-          activeBoardRef.current.rotation.z = THREE.MathUtils.lerp(activeBoardRef.current.rotation.z, mobileRotation.current.z, 0.1);
-        }
-      } else {
-        activeBoardRef.current.rotation.x = THREE.MathUtils.lerp(activeBoardRef.current.rotation.x, 0, 0.08);
-        activeBoardRef.current.rotation.z = THREE.MathUtils.lerp(activeBoardRef.current.rotation.z, 0, 0.08);
+  useFrame((state, delta) => {
+    const frameStart = performance.now();
+    updateActiveBoardTilt({
+      activeBoard: activeBoardRef.current,
+      controlsEnabled,
+      isFailed,
+      isReady,
+      isMobile,
+      pointer: state.pointer,
+      mobileRotation: mobileRotation.current,
+      targetGravity: targetGravity.current,
+    });
+
+    updateNextBoardRotation(nextBoardRef.current);
+
+    const transitionResult = updateTransitionState({
+      ball: ballRef.current,
+      transitionPhase,
+      transitionTarget,
+      activeOpacity: activeOpacityRef.current,
+      nextOpacity: nextOpacityRef.current,
+      onActiveOpacityChange: (opacity) => {
+        activeOpacityRef.current = opacity;
+        updateOpacity(activeMaterialsRef.current, opacity);
+      },
+      onNextOpacityChange: (opacity) => {
+        nextOpacityRef.current = opacity;
+        updateOpacity(nextMaterialsRef.current, opacity);
+      },
+      handoffStarted: handoffStartedRef.current,
+      transitionHandled: transitionHandledRef.current,
+      onEnterHandoff,
+      onCompleteTransition,
+    });
+    handoffStartedRef.current = transitionResult.handoffStarted;
+    transitionHandledRef.current = transitionResult.transitionHandled;
+
+    if (nextMaze) {
+      const desiredRadius = Math.max(2, Math.floor(2 + nextOpacityRef.current * 16));
+      if (desiredRadius !== revealRadiusRef.current) {
+        revealRadiusRef.current = desiredRadius;
+        setNextRevealRadius(desiredRadius);
       }
     }
 
-    if (nextBoardRef.current) {
-      nextBoardRef.current.rotation.x = THREE.MathUtils.lerp(nextBoardRef.current.rotation.x, 0, 0.1);
-      nextBoardRef.current.rotation.z = THREE.MathUtils.lerp(nextBoardRef.current.rotation.z, 0, 0.1);
-    }
+    syncCameraAndLight({
+      ball: ballRef.current,
+      camera,
+      lookTarget: lookTarget.current,
+      light: lightRef.current,
+    });
 
-    if (ballRef.current && transitionPhase !== 'idle' && transitionTarget) {
-      const ball = ballRef.current;
-      const current = ball.translation();
-      const velocity = ball.linvel();
-
-      // Fade transitions based on ball height
-      const aOpacity = THREE.MathUtils.clamp(1 + current.y / 10, 0, 1);
-      if (activeOpacityRef.current !== aOpacity) {
-        activeOpacityRef.current = aOpacity;
-        updateOpacity(activeMaterialsRef.current, aOpacity);
-      }
-
-      const distToTarget = Math.abs(current.y - transitionTarget[1]);
-      const nOpacity = THREE.MathUtils.clamp(1 - distToTarget / 15, 0, 1);
-      if (nextOpacityRef.current !== nOpacity) {
-        nextOpacityRef.current = nOpacity;
-        updateOpacity(nextMaterialsRef.current, nOpacity);
-      }
-
-      if (transitionPhase === 'falling') {
-        const steer = 0.12;
-        const nextX = THREE.MathUtils.lerp(current.x, transitionTarget[0], steer);
-        const nextZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], steer);
-        ball.setTranslation({ x: nextX, y: current.y, z: nextZ }, true);
-        ball.setLinvel({ x: 0, y: Math.min(velocity.y, -15), z: 0 }, true);
-
-        if (!handoffStartedRef.current && current.y <= transitionTarget[1] + 2.5) {
-          handoffStartedRef.current = true;
-          onEnterHandoff();
-        }
-      }
-
-      if (transitionPhase === 'handoff') {
-        const handoffSteer = 0.25;
-        const steerX = THREE.MathUtils.lerp(current.x, transitionTarget[0], handoffSteer);
-        const steerZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], handoffSteer);
-        ball.setTranslation({ x: steerX, y: current.y, z: steerZ }, true);
-        
-        const nearLanding = current.y <= transitionTarget[1] + 0.6;
-        if (!transitionHandledRef.current && nearLanding) {
-          transitionHandledRef.current = true;
-          onCompleteTransition();
-        }
+    if (nextMaze && isPerfEnabled()) {
+      const stats = renderStatsRef.current;
+      const frameMs = delta * 1000;
+      stats.elapsed += frameMs;
+      stats.frameCount += 1;
+      if (frameMs > stats.maxDeltaMs) stats.maxDeltaMs = frameMs;
+      if (stats.elapsed >= 500) {
+        const drawCalls = state.gl.info.render.calls;
+        const triangles = state.gl.info.render.triangles;
+        const avgFrame = stats.elapsed / stats.frameCount;
+        console.debug(
+          `[perf] transition overlap: avgFrame=${avgFrame.toFixed(2)}ms maxFrame=${stats.maxDeltaMs.toFixed(2)}ms drawCalls=${drawCalls} triangles=${triangles}`,
+        );
+        stats.elapsed = 0;
+        stats.frameCount = 0;
+        stats.maxDeltaMs = 0;
       }
     }
-
-    if (!ballRef.current) return
-    const cameraTarget = ballRef.current.translation()
-    
-    camera.position.x = cameraTarget.x;
-    camera.position.y = cameraTarget.y + CAMERA_HEIGHT;
-    camera.position.z = cameraTarget.z;
-    
-    lookTarget.current.set(cameraTarget.x, cameraTarget.y, cameraTarget.z);
-    camera.lookAt(lookTarget.current);
-
-    if (lightRef.current) {
-      lightRef.current.position.set(cameraTarget.x + 15, cameraTarget.y + 25, cameraTarget.z + 15);
-      lightRef.current.target.position.set(cameraTarget.x, cameraTarget.y, cameraTarget.z);
-      lightRef.current.target.updateMatrixWorld();
-    }
+    markDuration('scene.useFrame', performance.now() - frameStart);
   });
+
+  const inTransition = transitionPhase !== 'idle';
+  const nextRevealCenter = useMemo<[number, number]>(() => {
+    if (!transitionTarget) return [0, 0];
+    return [
+      transitionTarget[0] - nextMazeOffset[0],
+      transitionTarget[2] - nextMazeOffset[1],
+    ];
+  }, [nextMazeOffset, transitionTarget]);
 
   return (
     <>
@@ -359,7 +321,7 @@ function SceneContent({
          position={[15, 25, 15]} 
          intensity={1.5} 
          castShadow 
-         shadow-mapSize={[2048, 2048]}
+         shadow-mapSize={inTransition ? SHADOW_MAP_TRANSITION : SHADOW_MAP_IDLE}
          shadow-camera-left={-12}
          shadow-camera-right={12}
          shadow-camera-top={12}
@@ -381,9 +343,9 @@ function SceneContent({
           <group ref={activeBoardRef}>
             <Maze 
               map={activeMaze.map} 
-              mazeId={activeMaze.id} 
               onPortalEnter={onPortalEnter} 
               onFail={onFail} 
+              isInteractive
             />
             {(!isMobile || isReady) && (
               <Ball 
@@ -401,17 +363,19 @@ function SceneContent({
             >
               <Maze 
                 map={nextMaze.map} 
-                mazeId={nextMaze.id} 
-                onPortalEnter={() => {}} 
-                onFail={() => {}} 
+                onPortalEnter={NOOP_PORTAL_ENTER}
+                onFail={NOOP_FAIL}
+                isInteractive={false}
+                revealCenter={nextRevealCenter}
+                revealRadius={nextRevealRadius}
               />
             </group>
           )}
          </Suspense>
        </Physics>
 
-       <EffectComposer enableNormalPass={false} multisampling={8}>
-         <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={1.5} />
+       <EffectComposer enableNormalPass={false} multisampling={inTransition ? 0 : 8}>
+         <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={inTransition ? 1.0 : 1.5} />
          <Noise opacity={0.02} />
          <Vignette eskil={false} offset={0.1} darkness={1.1} />
        </EffectComposer>
@@ -437,7 +401,8 @@ export function GameScene({
     const ballRef = useRef<RapierRigidBody | null>(null);
 
     const controlsEnabled = isReady && !isFailed && transitionPhase === 'idle';
-    const ballSpawnPosition = useMemo(() => getStartPosition(activeMaze.map), [activeMaze.map]);
+    const ballSpawnPosition = useMemo(() => getDescriptorStartPosition(activeMaze), [activeMaze]);
+    const transitionStartRef = useRef(0);
 
     useEffect(() => {
         if (!isMobile) return;
@@ -457,18 +422,15 @@ export function GameScene({
 
     const handleFail = useCallback((entryPosition: [number, number, number]) => {
       if (transitionPhase !== 'idle' || isFailed) return;
+      const setupStart = performance.now();
       
       const match = activeMaze.path.match(/^\/endless\/([^/]+)/);
       if (!match) return; // Only endless mode has retry maze
       
       const seed = match[1];
-      const destination: MazeDescriptor = {
-          id: 'retry',
-          path: `/endless/${seed}/retry`,
-          map: levelRetry,
-      };
+      const destination = mazeFromPath(`/endless/${seed}/retry`);
       
-      const targetStartLocal = getStartPosition(destination.map, 0);
+      const targetStartLocal = getDescriptorStartPosition(destination, 0);
       const offsetX = entryPosition[0] - targetStartLocal[0];
       const offsetZ = entryPosition[2] - targetStartLocal[2];
       
@@ -476,19 +438,18 @@ export function GameScene({
       setNextMazeOffset([offsetX, offsetZ]);
       setTransitionTarget([entryPosition[0], -DROP_DISTANCE + 0.5, entryPosition[2]]);
       setTransitionPhase('falling');
+      transitionStartRef.current = performance.now();
+      markDuration('transition.failSetup', performance.now() - setupStart);
     }, [activeMaze.path, transitionPhase, isFailed]);
 
     const handlePortalEnter = useCallback((destinationId: string, entryPosition: [number, number, number]) => {
       if (transitionPhase !== 'idle' || isFailed) return;
+      const setupStart = performance.now();
 
       let destination: MazeDescriptor;
       if (destinationId === 'endless') {
         const seed = randomSeed();
-        destination = {
-          id: 'endless',
-          path: `/endless/${seed}`,
-          map: generateMaze(seed),
-        };
+        destination = mazeFromPath(`/endless/${seed}`);
       } else if (destinationId === 'endless/retry') {
         const seed = activeMaze.path.split('/')[2];
         destination = mazeFromPath(`/endless/${seed}`);
@@ -497,7 +458,7 @@ export function GameScene({
         destination = mazeFromPath(normalizedPath);
       }
 
-      const targetStartLocal = getStartPosition(destination.map, 0);
+      const targetStartLocal = getDescriptorStartPosition(destination, 0);
       const offsetX = entryPosition[0] - targetStartLocal[0];
       const offsetZ = entryPosition[2] - targetStartLocal[2];
       
@@ -505,7 +466,9 @@ export function GameScene({
       setNextMazeOffset([offsetX, offsetZ]);
       setTransitionTarget([entryPosition[0], -DROP_DISTANCE + 0.5, entryPosition[2]]);
       setTransitionPhase('falling');
-    }, [transitionPhase, isFailed]);
+      transitionStartRef.current = performance.now();
+      markDuration('transition.portalSetup', performance.now() - setupStart);
+    }, [activeMaze.path, transitionPhase, isFailed]);
 
     const portalEnterRef = useRef(handlePortalEnter);
     const failRef = useRef(handleFail);
@@ -517,6 +480,9 @@ export function GameScene({
 
     const handleEnterHandoff = useCallback(() => {
       setTransitionPhase('handoff');
+      if (transitionStartRef.current > 0) {
+        markDuration('transition.toHandoff', performance.now() - transitionStartRef.current);
+      }
     }, []);
 
     const handleCompleteTransition = useCallback(() => {
@@ -527,6 +493,10 @@ export function GameScene({
       setTransitionPhase('idle');
       setIsFailed(false);
       onPathChange(nextMaze.path);
+      if (transitionStartRef.current > 0) {
+        markDuration('transition.fullDuration', performance.now() - transitionStartRef.current);
+      }
+      transitionStartRef.current = 0;
     }, [nextMaze, onPathChange]);
 
     return (
