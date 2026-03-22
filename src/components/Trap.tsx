@@ -1,6 +1,6 @@
 import { RigidBody, CylinderCollider, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
 import { useState, useMemo, useRef, memo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
   applySuctionImpulse,
@@ -19,6 +19,35 @@ interface TrapProps {
 
 const NEON_BLUE = new THREE.Color("#00ccff");
 const RED_ORANGE = new THREE.Color("#ff4400");
+
+const TRAP_CYCLE_S = 8;
+const TRAP_OPEN_START_S = 4;
+/** Matches `delta * speed` lerp rate in the original trap animation (≈0.25s for full open/close). */
+const TRAP_DOOR_ANIM_SPEED = 4;
+
+/**
+ * Door slide progress 0 = closed (hole blocked), 1 = open, derived from the global clock so new traps
+ * match physics immediately when the maze mounts mid-session (e.g. portal → endless).
+ *
+ * The first [0, dur) slice of the closed phase is only a "closing" blend after a full cycle has
+ * elapsed; before that (fresh scene at t≈0) we stay closed so a cold load matches the old behavior.
+ */
+export function computeTrapDoorProgress(elapsedTime: number): number {
+  const dur = 1 / TRAP_DOOR_ANIM_SPEED;
+  const u = elapsedTime % TRAP_CYCLE_S;
+
+  if (u < TRAP_OPEN_START_S) {
+    if (u < dur && elapsedTime >= TRAP_CYCLE_S) {
+      return 1 - u / dur;
+    }
+    return 0;
+  }
+  const sinceOpen = u - TRAP_OPEN_START_S;
+  if (sinceOpen < dur) {
+    return sinceOpen / dur;
+  }
+  return 1;
+}
 
 const TrapVisuals = memo(({ 
     doorRef, 
@@ -73,13 +102,14 @@ const TrapInteractive = memo(function TrapInteractive({
   slideDirection = { x: 0, z: -1 },
   castsShadow = true,
 }: TrapProps) {
-  const [isPhysicsOpen, setIsPhysicsOpen] = useState(false);
+  const { clock } = useThree();
+  const initialPhysicsOpen = computeTrapDoorProgress(clock.elapsedTime) > 0.8;
+  const trapPhysicsOpenRef = useRef(initialPhysicsOpen);
+  const [isPhysicsOpen, setIsPhysicsOpen] = useState(initialPhysicsOpen);
   const didTriggerFailRef = useRef(false);
   const trapPosVec = useMemo(() => new THREE.Vector3(...position), [position]);
   const tempVec = useRef(new THREE.Vector3());
-  
-  const isOpenRef = useRef(false);
-  const progressRef = useRef(0);
+
   const ballInRangeRef = useRef<RapierRigidBody | null>(null);
   
   const doorRef = useRef<THREE.Mesh | null>(null);
@@ -102,18 +132,16 @@ const TrapInteractive = memo(function TrapInteractive({
   }, []);
 
   useFrame((state, delta) => {
-    const speed = 4.0;
-    const cycleTime = 8;
-    const isOpen = (state.clock.elapsedTime % cycleTime) >= 4;
-    isOpenRef.current = isOpen;
-    
-    if (isOpen && progressRef.current < 1) {
-      progressRef.current = Math.min(1, progressRef.current + delta * speed);
-    } else if (!isOpen && progressRef.current > 0) {
-      progressRef.current = Math.max(0, progressRef.current - delta * speed);
-    }
+    const t = computeTrapDoorProgress(state.clock.elapsedTime);
+    const isOpen = (state.clock.elapsedTime % TRAP_CYCLE_S) >= TRAP_OPEN_START_S;
 
-    const t = progressRef.current;
+    let nextPhysicsOpen = trapPhysicsOpenRef.current;
+    if (t > 0.8) nextPhysicsOpen = true;
+    else if (t < 0.2) nextPhysicsOpen = false;
+    if (nextPhysicsOpen !== trapPhysicsOpenRef.current) {
+      trapPhysicsOpenRef.current = nextPhysicsOpen;
+      setIsPhysicsOpen(nextPhysicsOpen);
+    }
 
     if (doorRef.current) {
         doorRef.current.position.x = slideDirection.x * t * 0.9;
@@ -137,13 +165,7 @@ const TrapInteractive = memo(function TrapInteractive({
         borderRef.current.scale.setScalar(isOpen ? pulse : 1);
     }
 
-    if (t > 0.8) {
-      if (!isPhysicsOpen) setIsPhysicsOpen(true);
-    } else if (t < 0.2) {
-      if (isPhysicsOpen) setIsPhysicsOpen(false);
-    }
-
-    if (isPhysicsOpen && t > 0.6 && ballInRangeRef.current) {
+    if (trapPhysicsOpenRef.current && t > 0.6 && ballInRangeRef.current) {
       applySuctionImpulse({
         body: ballInRangeRef.current,
         attractor: trapPosVec,
@@ -193,7 +215,7 @@ const TrapInteractive = memo(function TrapInteractive({
           sensor
           onIntersectionEnter={({ other }) => {
             if (didTriggerFailRef.current) return;
-            if (isBallIntersection(other) && isPhysicsOpen) {
+            if (isBallIntersection(other) && trapPhysicsOpenRef.current) {
               const rb = other.rigidBody;
               if (rb) {
                 didTriggerFailRef.current = true;
