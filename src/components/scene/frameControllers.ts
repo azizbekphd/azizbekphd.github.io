@@ -2,7 +2,16 @@ import type { RapierRigidBody } from '@react-three/rapier';
 import * as THREE from 'three';
 
 const CAMERA_HEIGHT = 20;
+/** Extra camera height while falling (speed / pullback read). */
+const TRANSITION_CAMERA_HEIGHT_BOOST = 2.5;
+/** FOV widens by this amount at full transition intensity (PerspectiveCamera only). */
+const TRANSITION_FOV_BOOST = 6;
+/** Matches Canvas default in GameScene. */
+export const DEFAULT_SCENE_CAMERA_FOV = 40;
+const FOV_APPLY_EPSILON = 0.02;
 const OPACITY_EPSILON = 0.01;
+
+const _cameraUserDataKey = '__mazeTransitionLastFov';
 
 /** Reused for camera follow so it matches the interpolated RigidBody mesh transform. */
 const _ballWorldPos = new THREE.Vector3();
@@ -52,6 +61,23 @@ export function updateNextBoardRotation(nextBoard: THREE.Group | null): void {
   nextBoard.rotation.z = THREE.MathUtils.lerp(nextBoard.rotation.z, 0, 0.1);
 }
 
+/**
+ * Normalized 0–1 progress through a vertical drop for transition visuals.
+ * Uses ease-in so intensity ramps up as the ball falls deeper.
+ */
+export function getTransitionVisualIntensity(
+  currentY: number,
+  targetY: number,
+  startY: number | null,
+): number {
+  if (startY === null) return 0;
+  const range = startY - targetY;
+  if (range <= 1e-6) return 0;
+  const linear = (startY - currentY) / range;
+  const clamped = THREE.MathUtils.clamp(linear, 0, 1);
+  return clamped * clamped;
+}
+
 export function updateTransitionState(params: {
   ball: RapierRigidBody | null;
   transitionPhase: 'idle' | 'falling' | 'handoff';
@@ -64,6 +90,9 @@ export function updateTransitionState(params: {
   transitionHandled: boolean;
   onEnterHandoff: () => void;
   onCompleteTransition: () => void;
+  /** Require this many consecutive frames in the landing zone before swapping mazes (handoff only). */
+  handoffLandingHoldFrames?: number;
+  handoffLandingFrameCounterRef?: { current: number };
 }): { handoffStarted: boolean; transitionHandled: boolean } {
   const {
     ball,
@@ -77,6 +106,8 @@ export function updateTransitionState(params: {
     transitionHandled,
     onEnterHandoff,
     onCompleteTransition,
+    handoffLandingHoldFrames = 1,
+    handoffLandingFrameCounterRef,
   } = params;
 
   if (!ball || transitionPhase === 'idle' || !transitionTarget) {
@@ -119,10 +150,23 @@ export function updateTransitionState(params: {
     const steerZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], handoffSteer);
     ball.setTranslation({ x: steerX, y: current.y, z: steerZ }, true);
 
-    const nearLanding = current.y <= transitionTarget[1] + 0.6;
+    const nearLanding = current.y <= transitionTarget[1] + 0.85;
+    const holdCounter = handoffLandingFrameCounterRef;
     if (!nextTransitionHandled && nearLanding) {
-      nextTransitionHandled = true;
-      onCompleteTransition();
+      if (holdCounter && handoffLandingHoldFrames > 1) {
+        holdCounter.current += 1;
+        if (holdCounter.current >= handoffLandingHoldFrames) {
+          nextTransitionHandled = true;
+          holdCounter.current = 0;
+          onCompleteTransition();
+        }
+      } else {
+        nextTransitionHandled = true;
+        if (holdCounter) holdCounter.current = 0;
+        onCompleteTransition();
+      }
+    } else if (holdCounter && !nearLanding) {
+      holdCounter.current = 0;
     }
   }
 
@@ -139,8 +183,12 @@ export function syncCameraAndLight(params: {
   camera: THREE.Camera;
   lookTarget: THREE.Vector3;
   light: THREE.DirectionalLight | null;
+  /** 0 = idle look; 1 = full fall speed visual (FOV / height). */
+  fallIntensity?: number;
+  baseFov?: number;
 }): void {
-  const { ball, ballObject, camera, lookTarget, light } = params;
+  const { ball, ballObject, camera, lookTarget, light, fallIntensity = 0, baseFov = DEFAULT_SCENE_CAMERA_FOV } =
+    params;
   if (!ball && !ballObject) return;
 
   if (ballObject) {
@@ -152,12 +200,24 @@ export function syncCameraAndLight(params: {
     return;
   }
 
+  const height = CAMERA_HEIGHT + fallIntensity * TRANSITION_CAMERA_HEIGHT_BOOST;
   camera.position.x = _ballWorldPos.x;
-  camera.position.y = _ballWorldPos.y + CAMERA_HEIGHT;
+  camera.position.y = _ballWorldPos.y + height;
   camera.position.z = _ballWorldPos.z;
 
   lookTarget.copy(_ballWorldPos);
   camera.lookAt(lookTarget);
+
+  if (camera instanceof THREE.PerspectiveCamera) {
+    const targetFov = baseFov + fallIntensity * TRANSITION_FOV_BOOST;
+    const ud = camera.userData as Record<string, number | undefined>;
+    const last = ud[_cameraUserDataKey];
+    if (last === undefined || Math.abs(targetFov - last) > FOV_APPLY_EPSILON) {
+      camera.fov = targetFov;
+      camera.updateProjectionMatrix();
+      ud[_cameraUserDataKey] = targetFov;
+    }
+  }
 
   if (light) {
     light.position.set(_ballWorldPos.x + 15, _ballWorldPos.y + 25, _ballWorldPos.z + 15);

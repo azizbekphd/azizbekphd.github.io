@@ -5,16 +5,20 @@ import type { MutableRefObject } from 'react';
 import { Maze } from './Maze';
 import { Ball } from './Ball';
 import * as THREE from 'three';
-import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing';
+import type { EffectComposer as PostEffectComposer } from 'postprocessing';
+import { EffectComposer, Bloom, ChromaticAberration, Noise, Vignette } from '@react-three/postprocessing';
 import type { MazeDescriptor } from '../types';
 import { mazeFromPath, randomSeed } from '../utils/maze/routing';
 import { getDescriptorStartPosition } from '../utils/maze/spawn';
 import {
+  DEFAULT_SCENE_CAMERA_FOV,
+  getTransitionVisualIntensity,
   syncCameraAndLight,
   updateActiveBoardTilt,
   updateNextBoardRotation,
   updateTransitionState,
 } from './scene/frameControllers';
+import { applyTransitionFxEffects, collectTransitionFxEffects } from './scene/transitionPostFx';
 import { useMobileMotionGravity } from './scene/useMobileMotionGravity';
 import { isPerfEnabled, markDuration } from '../utils/perf';
 
@@ -22,6 +26,13 @@ import { isPerfEnabled, markDuration } from '../utils/perf';
 
 const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 const DROP_DISTANCE = 30;
+/** Fade speed FX in the last ~this many units before the landing height. */
+const TRANSITION_LANDING_SOFT_RANGE = 4.5;
+/** Smoothed fall visuals: faster when ramping up, slower when releasing (landing / idle). */
+const FALL_VISUAL_DAMP_UP = 12;
+const FALL_VISUAL_DAMP_DOWN = 4.25;
+/** Consecutive frames in the handoff landing zone before maze swap. */
+const HANDOFF_LANDING_HOLD_FRAMES = 5;
 const SHADOW_MAP_SIZE: [number, number] = [2048, 2048];
 const NOOP_PORTAL_ENTER = (_destinationId: string, _entryPosition: [number, number, number]) => {};
 const NOOP_FAIL = (_entryPosition: [number, number, number]) => {};
@@ -33,12 +44,14 @@ function BallCameraFollow({
   camera,
   lookTargetRef,
   lightRef,
+  fallIntensityRef,
 }: {
   ballRef: MutableRefObject<RapierRigidBody | null>;
   activeBoardRef: MutableRefObject<THREE.Group | null>;
   camera: THREE.Camera;
   lookTargetRef: MutableRefObject<THREE.Vector3>;
   lightRef: MutableRefObject<THREE.DirectionalLight | null>;
+  fallIntensityRef: MutableRefObject<number>;
 }) {
   useFrame(() => {
     const ballObject = activeBoardRef.current?.getObjectByName('ball') ?? null;
@@ -48,6 +61,8 @@ function BallCameraFollow({
       camera,
       lookTarget: lookTargetRef.current,
       light: lightRef.current,
+      fallIntensity: fallIntensityRef.current,
+      baseFov: DEFAULT_SCENE_CAMERA_FOV,
     });
   });
   return null;
@@ -129,6 +144,12 @@ function SceneContent({
   const lastActiveMazePath = useRef(activeMaze.path);
   const lookTarget = useRef(new THREE.Vector3(0, 0, 0));
   const lightRef = useRef<THREE.DirectionalLight>(null);
+  const fallStartYRef = useRef<number | null>(null);
+  const smoothedFallVisualRef = useRef(0);
+  const handoffLandingFrameCounterRef = useRef(0);
+  const transitionFallIntensityRef = useRef(0);
+  const composerRef = useRef<PostEffectComposer | null>(null);
+  const transitionFxCacheRef = useRef<ReturnType<typeof collectTransitionFxEffects> | null>(null);
 
   // Cache for materials to avoid traversal in useFrame
   const activeMaterialsRef = useRef<OpacityItem[]>([]);
@@ -250,6 +271,8 @@ function SceneContent({
     if (transitionPhase === 'idle') {
       transitionHandledRef.current = false;
       handoffStartedRef.current = false;
+      fallStartYRef.current = null;
+      handoffLandingFrameCounterRef.current = 0;
       activeOpacityRef.current = 1;
       nextOpacityRef.current = 0;
       updateOpacity(activeMaterialsRef.current, 1);
@@ -290,9 +313,49 @@ function SceneContent({
       transitionHandled: transitionHandledRef.current,
       onEnterHandoff,
       onCompleteTransition,
+      handoffLandingHoldFrames: HANDOFF_LANDING_HOLD_FRAMES,
+      handoffLandingFrameCounterRef: handoffLandingFrameCounterRef,
     });
     handoffStartedRef.current = transitionResult.handoffStarted;
     transitionHandledRef.current = transitionResult.transitionHandled;
+
+    let targetFallIntensity = 0;
+    if (transitionPhase !== 'idle' && transitionTarget) {
+      const ballBody = ballRef.current;
+      if (ballBody) {
+        if (fallStartYRef.current === null) {
+          fallStartYRef.current = ballBody.translation().y;
+        }
+        const y = ballBody.translation().y;
+        targetFallIntensity = getTransitionVisualIntensity(y, transitionTarget[1], fallStartYRef.current);
+        const dy = y - transitionTarget[1];
+        if (dy < TRANSITION_LANDING_SOFT_RANGE) {
+          const u = THREE.MathUtils.clamp(dy / TRANSITION_LANDING_SOFT_RANGE, 0, 1);
+          targetFallIntensity *= THREE.MathUtils.smootherstep(0, 1, u);
+        }
+      }
+    } else {
+      fallStartYRef.current = null;
+    }
+
+    const prevSmooth = smoothedFallVisualRef.current;
+    const damp = targetFallIntensity >= prevSmooth ? FALL_VISUAL_DAMP_UP : FALL_VISUAL_DAMP_DOWN;
+    let nextSmooth = prevSmooth + (targetFallIntensity - prevSmooth) * Math.min(1, damp * delta);
+    if (targetFallIntensity === 0 && Math.abs(nextSmooth) < 0.004) {
+      nextSmooth = 0;
+    }
+    smoothedFallVisualRef.current = nextSmooth;
+    transitionFallIntensityRef.current = nextSmooth;
+
+    const composer = composerRef.current;
+    if (composer) {
+      if (!transitionFxCacheRef.current?.bloom) {
+        transitionFxCacheRef.current = collectTransitionFxEffects(composer);
+      }
+      if (transitionFxCacheRef.current) {
+        applyTransitionFxEffects(transitionFxCacheRef.current, nextSmooth);
+      }
+    }
 
     if (nextMaze) {
       const desiredRadius = Math.max(2, Math.floor(2 + nextOpacityRef.current * 16));
@@ -397,11 +460,17 @@ function SceneContent({
           camera={camera}
           lookTargetRef={lookTarget}
           lightRef={lightRef}
+          fallIntensityRef={transitionFallIntensityRef}
         />
        </Physics>
 
-       <EffectComposer enableNormalPass={false} multisampling={transitionPhase !== 'idle' ? 0 : 8}>
-         <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={transitionPhase !== 'idle' ? 1.0 : 1.5} />
+       <EffectComposer
+         ref={composerRef}
+         enableNormalPass={false}
+         multisampling={transitionPhase !== 'idle' ? 0 : 8}
+       >
+         <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={1.5} />
+         <ChromaticAberration offset={[0, 0]} radialModulation modulationOffset={0.12} />
          <Noise opacity={0.02} />
          <Vignette eskil={false} offset={0.1} darkness={1.1} />
        </EffectComposer>
