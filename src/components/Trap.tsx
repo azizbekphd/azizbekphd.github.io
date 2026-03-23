@@ -1,5 +1,12 @@
-import { RigidBody, CylinderCollider, CuboidCollider, RapierRigidBody } from '@react-three/rapier';
-import { useState, useMemo, useRef, memo } from 'react';
+import {
+  RigidBody,
+  CylinderCollider,
+  CuboidCollider,
+  RapierRigidBody,
+  useBeforePhysicsStep,
+} from '@react-three/rapier';
+import type { RapierCollider } from '@react-three/rapier';
+import { useMemo, useRef, memo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
@@ -109,9 +116,9 @@ const TrapInteractive = memo(function TrapInteractive({
   castsShadow = true,
 }: TrapProps) {
   const { clock } = useThree();
-  const initialPhysicsOpen = computeTrapDoorProgress(clock.elapsedTime) > 0.8;
-  const trapPhysicsOpenRef = useRef(initialPhysicsOpen);
-  const [isPhysicsOpen, setIsPhysicsOpen] = useState(initialPhysicsOpen);
+  const t0 = computeTrapDoorProgress(clock.elapsedTime);
+  const trapPhysicsOpenRef = useRef(t0 > 0.8);
+  const holeBlockColliderRef = useRef<RapierCollider | null>(null);
   const didTriggerFailRef = useRef(false);
   const trapPosVec = useMemo(() => new THREE.Vector3(...position), [position]);
   const tempVec = useRef(new THREE.Vector3());
@@ -137,17 +144,23 @@ const TrapInteractive = memo(function TrapInteractive({
     return shape;
   }, []);
 
-  useFrame((state, delta) => {
-    const t = computeTrapDoorProgress(state.clock.elapsedTime);
-    const isOpen = (state.clock.elapsedTime % TRAP_CYCLE_S) >= TRAP_OPEN_START_S;
+  const syncTrapPhysicsFromClock = (elapsedTime: number) => {
+    const t = computeTrapDoorProgress(elapsedTime);
+    let next = trapPhysicsOpenRef.current;
+    if (t > 0.8) next = true;
+    else if (t < 0.2) next = false;
+    trapPhysicsOpenRef.current = next;
+    holeBlockColliderRef.current?.setEnabled(!next);
+    return t;
+  };
 
-    let nextPhysicsOpen = trapPhysicsOpenRef.current;
-    if (t > 0.8) nextPhysicsOpen = true;
-    else if (t < 0.2) nextPhysicsOpen = false;
-    if (nextPhysicsOpen !== trapPhysicsOpenRef.current) {
-      trapPhysicsOpenRef.current = nextPhysicsOpen;
-      setIsPhysicsOpen(nextPhysicsOpen);
-    }
+  useBeforePhysicsStep(() => {
+    syncTrapPhysicsFromClock(clock.elapsedTime);
+  });
+
+  useFrame((state, delta) => {
+    const t = syncTrapPhysicsFromClock(state.clock.elapsedTime);
+    const isOpen = (state.clock.elapsedTime % TRAP_CYCLE_S) >= TRAP_OPEN_START_S;
 
     if (doorRef.current) {
         doorRef.current.position.x = slideDirection.x * t * 0.9;
@@ -197,7 +210,11 @@ const TrapInteractive = memo(function TrapInteractive({
       />
 
       <RigidBody type="fixed" friction={0.1} restitution={0.2} colliders={false}>
-        {!isPhysicsOpen && <CuboidCollider args={[0.5, 0.5, 0.5]} position={[0, -0.5, 0]} />}
+        <CuboidCollider
+          ref={holeBlockColliderRef}
+          args={[0.5, 0.5, 0.5]}
+          position={[0, -0.5, 0]}
+        />
         <CuboidCollider args={[0.1, 0.5, 0.5]} position={[-0.45, -0.5, 0]} />
         <CuboidCollider args={[0.1, 0.5, 0.5]} position={[0.45, -0.5, 0]} />
         <CuboidCollider args={[0.4, 0.5, 0.1]} position={[0, -0.5, -0.45]} />
