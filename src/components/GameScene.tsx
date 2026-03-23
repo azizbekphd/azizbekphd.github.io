@@ -25,7 +25,9 @@ import { isPerfEnabled, markDuration } from '../utils/perf';
 /* eslint-disable react-hooks/immutability */
 
 const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-const DROP_DISTANCE = 30;
+const DROP_DISTANCE = 34;
+/** While the next board’s smoothed opacity stays below this, the upper maze keeps casting static shadows (handoff always disables). */
+const ACTIVE_STATIC_SHADOW_MAX_NEXT_OPACITY = 0.2;
 /** Fade speed FX in the last ~this many units before the landing height. */
 const TRANSITION_LANDING_SOFT_RANGE = 4.5;
 /** Smoothed fall visuals: faster when ramping up, slower when releasing (landing / idle). */
@@ -392,6 +394,20 @@ function SceneContent({
         stats.maxDeltaMs = 0;
       }
     }
+    const allowActiveStaticShadow =
+      transitionPhase === 'idle' ||
+      (transitionPhase === 'falling' && nextOpacityRef.current < ACTIVE_STATIC_SHADOW_MAX_NEXT_OPACITY);
+    const board = activeBoardRef.current;
+    if (board) {
+      board.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (mesh.isMesh !== true) return;
+        if (mesh.userData.staticLevelShadowCaster === true) {
+          mesh.castShadow = allowActiveStaticShadow;
+        }
+      });
+    }
+
     markDuration('scene.useFrame', performance.now() - frameStart);
   });
 
@@ -437,7 +453,7 @@ function SceneContent({
               onPortalEnter={onPortalEnter} 
               onFail={onFail} 
               isInteractive
-              castsStaticShadows={transitionPhase === 'idle'}
+              castsStaticShadows
             />
             {(!isMobile || isReady) && (
               <Ball 

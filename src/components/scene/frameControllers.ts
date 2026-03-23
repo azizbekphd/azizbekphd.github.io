@@ -10,6 +10,8 @@ const TRANSITION_FOV_BOOST = 6;
 export const DEFAULT_SCENE_CAMERA_FOV = 40;
 const FOV_APPLY_EPSILON = 0.02;
 const OPACITY_EPSILON = 0.01;
+/** Larger = next maze stays fully faded longer during the drop (less overlap with upper-board shadows). */
+const TRANSITION_NEXT_REVEAL_DEPTH_UNITS = 26;
 
 /** Pointer-driven maze (tuned between original softness and the first desktop bump). */
 const DESKTOP_BOARD_MAX_TILT_RAD = THREE.MathUtils.degToRad(16);
@@ -135,7 +137,11 @@ export function updateTransitionState(params: {
   }
 
   const distToTarget = Math.abs(current.y - transitionTarget[1]);
-  const rawNextOpacity = THREE.MathUtils.clamp(1 - distToTarget / 18, 0, 1);
+  const rawNextOpacity = THREE.MathUtils.clamp(
+    1 - distToTarget / TRANSITION_NEXT_REVEAL_DEPTH_UNITS,
+    0,
+    1,
+  );
   const nOpacity = rawNextOpacity * rawNextOpacity * (3 - 2 * rawNextOpacity);
   if (Math.abs(nextOpacity - nOpacity) > OPACITY_EPSILON) {
     onNextOpacityChange(nOpacity);

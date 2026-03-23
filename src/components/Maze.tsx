@@ -199,6 +199,7 @@ export const Maze = memo(function Maze({
         ]}
         castShadow={castsStaticShadows}
         receiveShadow
+        userData={{ staticLevelShadowCaster: true }}
       >
         <boxGeometry args={[CELL_SIZE, WALL_HEIGHT, CELL_SIZE]} />
         <meshStandardMaterial

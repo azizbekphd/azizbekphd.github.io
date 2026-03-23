@@ -76,7 +76,13 @@ const TrapVisuals = memo(({
         <meshStandardMaterial color="#000000" roughness={1} transparent />
       </mesh>
 
-      <mesh ref={doorRef} position={[0, -0.05, 0]} castShadow={castsShadow} receiveShadow>
+      <mesh
+        ref={doorRef}
+        position={[0, -0.05, 0]}
+        castShadow={castsShadow}
+        receiveShadow
+        userData={{ staticLevelShadowCaster: true }}
+      >
         <cylinderGeometry args={[0.44, 0.44, 0.05, 32]} />
         <meshStandardMaterial 
           ref={doorMatRef}
