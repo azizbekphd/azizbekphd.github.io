@@ -7,10 +7,15 @@ export type MazeRevealShaderUniforms = {
 };
 
 const REVEAL_UNIFORMS_UD = 'mazeRevealShaderUniforms';
+const REVEAL_PATCH_UD = 'mazeRevealShaderPatched';
 
 /**
  * Soft radial mask in maze-local XZ (instance origin), for InstancedMesh only.
  * Uniform `.value` updates each frame — no React/layout churn.
+ *
+ * Safe to call repeatedly: only the first call installs `onBeforeCompile` and
+ * triggers `needsUpdate` (shader compile). Later calls only refresh uniform
+ * values so layout/map changes do not re-run `getProgramInfoLog` / relink.
  */
 export function applyRadialRevealToInstancedStandardMaterial(
   material: THREE.MeshStandardMaterial,
@@ -18,12 +23,22 @@ export function applyRadialRevealToInstancedStandardMaterial(
   radius: number,
   softness: number,
 ): MazeRevealShaderUniforms {
+  const ud = material.userData as Record<string, unknown>;
+  const existing = ud[REVEAL_UNIFORMS_UD] as MazeRevealShaderUniforms | undefined;
+  if (ud[REVEAL_PATCH_UD] === true && existing) {
+    existing.uRevealCenter.value.set(center[0], center[1]);
+    existing.uRevealRadius.value = radius;
+    existing.uRevealSoftness.value = softness;
+    return existing;
+  }
+
   const revealUniforms: MazeRevealShaderUniforms = {
     uRevealCenter: { value: new THREE.Vector2(center[0], center[1]) },
     uRevealRadius: { value: radius },
     uRevealSoftness: { value: softness },
   };
-  (material.userData as Record<string, unknown>)[REVEAL_UNIFORMS_UD] = revealUniforms;
+  ud[REVEAL_UNIFORMS_UD] = revealUniforms;
+  ud[REVEAL_PATCH_UD] = true;
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, revealUniforms);

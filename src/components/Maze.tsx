@@ -168,6 +168,8 @@ export const Maze = memo(function Maze({
     markDuration('maze.component.updateInstanceMatrices', performance.now() - start);
   }, [wallVisuals, floorVisuals]);
 
+  // Reveal shader is identical for any map size; omit `map` from deps to avoid
+  // redundant shader relinks (driver getProgramInfoLog stalls).
   useLayoutEffect(() => {
     if (!revealShaderMode || !revealCenter || !revealRadiusRef) return;
     const w = wallMatRef.current;
@@ -176,7 +178,7 @@ export const Maze = memo(function Maze({
     const r0 = revealRadiusRef.current;
     applyRadialRevealToInstancedStandardMaterial(w, revealCenter, r0, revealSoftness);
     applyRadialRevealToInstancedStandardMaterial(f, revealCenter, r0, revealSoftness);
-  }, [revealShaderMode, revealCenter, revealRadiusRef, revealSoftness, map, wallVisuals.length, floorVisuals.length]);
+  }, [revealShaderMode, revealCenter, revealRadiusRef, revealSoftness, wallVisuals.length, floorVisuals.length]);
 
   useFrame(() => {
     if (!revealShaderMode || !revealCenter || !revealRadiusRef) return;
