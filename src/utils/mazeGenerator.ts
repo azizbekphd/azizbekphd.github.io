@@ -119,14 +119,30 @@ export function generateMaze(seedStr: string, size = 21): LevelMap {
     pathSet[z * size + x] = 1;
   }
 
-  // Place traps (6) on the main path
+  // Place traps on the main path with uneven spacing (seeded random partition of the path)
   if (pathList.length > 30) {
     const targetTraps = 20;
-    for (let i = 1; i <= targetTraps; i++) {
-      const index = Math.floor((pathList.length * i) / targetTraps) - 1;
-      const [tx, tz] = pathList[index];
-      if (maze[tz][tx] === FLOOR) {
-        maze[tz][tx] = TRAP;
+    const pathLo = 2;
+    const pathHi = pathList.length - 2;
+    const span = pathHi - pathLo;
+    if (span > targetTraps) {
+      const weights = Array.from({ length: targetTraps + 1 }, () => rng.next() + 0.01);
+      const totalW = weights.reduce((a, b) => a + b, 0);
+      let wPrefix = 0;
+      let lastIndex = pathLo - 1;
+      for (let i = 0; i < targetTraps; i++) {
+        wPrefix += weights[i];
+        let index = pathLo + Math.floor((wPrefix / totalW) * span);
+        index = Math.min(pathHi - 1, index);
+        if (index <= lastIndex) {
+          index = Math.min(pathHi - 1, lastIndex + 1);
+        }
+        if (index > pathHi - 1) break;
+        lastIndex = index;
+        const [tx, tz] = pathList[index];
+        if (maze[tz][tx] === FLOOR) {
+          maze[tz][tx] = TRAP;
+        }
       }
     }
   }
